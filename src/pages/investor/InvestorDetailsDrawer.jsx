@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { getInvestorTransactions } from "../../services/investorStorage";
 
@@ -50,9 +51,23 @@ const InfoItem = ({ label, value }) => {
 };
 
 const InvestorDetailsDrawer = ({ investor, onClose }) => {
-  const transactions = getInvestorTransactions(investor.id).filter(
-    (transaction) => transaction.type === "Investment"
-  );
+  const [transactions, setTransactions] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getInvestorTransactions(investor.id).then((rows) => {
+      if (!cancelled) {
+        setTransactions(
+          rows.filter((transaction) => transaction.type === "Investment")
+        );
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [investor.id]);
   const invested = investor.investment?.totalInvested || 0;
   const ownership = investor.ownershipPercentage || 0;
   const status = investor.status || "Active";

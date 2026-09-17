@@ -272,3 +272,112 @@ CREATE TABLE IF NOT EXISTS payment_allocations (
 
 CREATE INDEX IF NOT EXISTS idx_allocations_loan_pk ON payment_allocations (loan_pk);
 CREATE INDEX IF NOT EXISTS idx_allocations_collection_pk ON payment_allocations (collection_pk);
+
+/* =========================================================
+   INVESTORS
+
+   Transactions are the ledger of record: an investor's
+   invested / allocated / available figures are always derived
+   by summing them, never stored as mutable columns (the old
+   browser version kept stale copies on the investor row).
+========================================================= */
+
+CREATE TABLE IF NOT EXISTS investors (
+  pk                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  id                 TEXT UNIQUE NOT NULL,
+  name               TEXT NOT NULL,
+  mobile_number      TEXT NOT NULL,
+  email              TEXT,
+  address            TEXT,
+  city               TEXT,
+  state              TEXT,
+  pincode            TEXT,
+  investor_type      TEXT NOT NULL DEFAULT 'Individual',
+  pan                TEXT,
+  bank_details_json  TEXT NOT NULL DEFAULT '{}',
+  investment_json    TEXT NOT NULL DEFAULT '{}',
+  status             TEXT NOT NULL DEFAULT 'Active',
+  remarks            TEXT,
+  created_at         TEXT NOT NULL,
+  updated_at         TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS investor_transactions (
+  pk               INTEGER PRIMARY KEY AUTOINCREMENT,
+  id               TEXT UNIQUE NOT NULL,
+  -- Loan allocations draw on the whole pool, so they carry no investor.
+  investor_pk      INTEGER REFERENCES investors (pk) ON DELETE CASCADE,
+  type             TEXT NOT NULL CHECK (type IN ('Investment', 'Loan Allocation')),
+  amount           REAL NOT NULL DEFAULT 0,
+  date             TEXT,
+  reference        TEXT,
+  investment_mode  TEXT,
+  notes            TEXT,
+  loan_pk          INTEGER REFERENCES loans (pk) ON DELETE SET NULL,
+  loan_number      TEXT,
+  created_at       TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_investor_tx_investor ON investor_transactions (investor_pk);
+CREATE INDEX IF NOT EXISTS idx_investor_tx_type ON investor_transactions (type);
+
+-- A loan can only ever be funded once.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_investor_tx_one_alloc_per_loan
+  ON investor_transactions (loan_pk)
+  WHERE type = 'Loan Allocation' AND loan_pk IS NOT NULL;
+
+/* =========================================================
+   EXPENSES
+
+   Free-form in the UI, so the detail travels as JSON while
+   the fields that get filtered and summed are real columns.
+========================================================= */
+
+CREATE TABLE IF NOT EXISTS expenses (
+  pk            INTEGER PRIMARY KEY AUTOINCREMENT,
+  id            TEXT UNIQUE NOT NULL,
+  amount        REAL NOT NULL DEFAULT 0,
+  status        TEXT NOT NULL DEFAULT 'Pending',
+  category      TEXT,
+  sub_category  TEXT,
+  expense_date  TEXT,
+  payment_mode  TEXT,
+  paid_by       TEXT,
+  vendor        TEXT,
+  reference     TEXT,
+  description   TEXT,
+  remarks       TEXT,
+  details_json  TEXT NOT NULL DEFAULT '{}',
+  created_by    TEXT,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_expenses_status ON expenses (status);
+CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses (expense_date);
+
+/* =========================================================
+   RE-LOAN
+
+   Rules are a single settings row; eligibility checks are a
+   write-once audit trail.
+========================================================= */
+
+CREATE TABLE IF NOT EXISTS reloan_rules (
+  pk          INTEGER PRIMARY KEY CHECK (pk = 1),
+  rules_json  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reloan_eligibility_checks (
+  pk           INTEGER PRIMARY KEY AUTOINCREMENT,
+  id           TEXT UNIQUE NOT NULL,
+  customer_pk  INTEGER REFERENCES customers (pk) ON DELETE CASCADE,
+  loan_pk      INTEGER REFERENCES loans (pk) ON DELETE CASCADE,
+  eligible     INTEGER NOT NULL DEFAULT 0,
+  status       TEXT NOT NULL,
+  result_json  TEXT NOT NULL DEFAULT '{}',
+  checked_at   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_reloan_checks_loan ON reloan_eligibility_checks (loan_pk);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
@@ -36,21 +36,33 @@ const ReLoanEligibility = () => {
       cancelled = true;
     };
   }, [loanId]);
-  const result = useMemo(
-    () => {
-      if (!match) {
-        return null;
-      }
+  const [result, setResult] = useState(null);
 
-      return checkReLoanEligibility({
-        customer: match.customer,
-        loan: match.loan,
-        vehicle: match.vehicle,
-        rules: getReLoanRules(),
-      });
-    },
-    [match]
-  );
+  useEffect(() => {
+    if (!match) {
+      setResult(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    getReLoanRules().then((rules) => {
+      if (!cancelled) {
+        setResult(
+          checkReLoanEligibility({
+            customer: match.customer,
+            loan: match.loan,
+            vehicle: match.vehicle,
+            rules,
+          })
+        );
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [match]);
 
   if (!match || !result) {
     return (
@@ -88,7 +100,7 @@ const ReLoanEligibility = () => {
           customer: fresh.customer,
           loan: fresh.loan,
           vehicle: fresh.vehicle,
-          rules: getReLoanRules(),
+          rules: await getReLoanRules(),
         })
       : null;
     if (!freshResult?.eligible) {

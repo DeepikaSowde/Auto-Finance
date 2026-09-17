@@ -122,15 +122,22 @@ const ReLoan = () => {
     }
 
     if (scanIndex >= scanResult.checks.length) {
-      const saved = saveReLoanEligibility(scanResult);
-      const timer = window.setTimeout(() => {
+      let cancelled = false;
+
+      saveReLoanEligibility(scanResult).then((saved) => {
+        if (cancelled) {
+          return;
+        }
+
         setResult(saved);
         setChecking(false);
         setScanComplete(true);
         setShowResultModal(false);
-      }, 0);
+      });
 
-      return () => window.clearTimeout(timer);
+      return () => {
+        cancelled = true;
+      };
     }
 
     const timer = window.setTimeout(() => {
@@ -140,7 +147,7 @@ const ReLoan = () => {
     return () => window.clearTimeout(timer);
   }, [checking, scanIndex, scanResult]);
 
-  const beginEligibilityCheck = () => {
+  const beginEligibilityCheck = async () => {
     if (!selectedRecord) {
       return;
     }
@@ -149,7 +156,7 @@ const ReLoan = () => {
       customer: selectedRecord.customer,
       loan: selectedRecord.loan,
       vehicle: selectedRecord.vehicle,
-      rules: getReLoanRules(),
+      rules: await getReLoanRules(),
     });
 
     setScanResult(calculated);

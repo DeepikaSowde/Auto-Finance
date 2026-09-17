@@ -107,8 +107,19 @@ and `authStorage.js` call this API through `src/services/api.js`. Set
 `VITE_API_BASE_URL` in the frontend `.env` if the API is not on
 `http://localhost:4000/api`.
 
-## Still on localStorage
+## Investors, expenses and re-loan
 
-Expenses, investors, re-loan rules/eligibility and the ledger view were
-deliberately left on the browser in this pass — they read through the same
-service layer and are the natural next step.
+- **Investors** (`investors`, `investor_transactions`): transactions are the
+  ledger of record — invested / allocated / available are summed from them,
+  never stored, so they cannot drift. Funding a loan draws on the pool as a
+  whole (it is not attributed to one investor, matching how this app has
+  always worked), and a unique index enforces one allocation per loan.
+- **Expenses** (`expenses`): the fields that get filtered and summed are real
+  columns; anything else the UI attaches travels in `details_json`.
+- **Re-loan** (`reloan_rules`, `reloan_eligibility_checks`): a single settings
+  row plus a write-once audit trail of each eligibility check.
+- **Ledger** is a read model, not a table — it aggregates approved
+  collections, vehicle sales and expenses at query time.
+
+Only two modules still touch browser storage, and both are dead code no page
+imports: `src/services/customerService.js` and `vehicleSaleStorage.js`.

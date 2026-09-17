@@ -1,14 +1,9 @@
 // src/services/expenseStorage.js
+//
+// Expenses are stored server-side; this module is a thin client plus the
+// reporting/aggregation helpers the expense pages render.
 
-/* =========================================================
-   STORAGE
-========================================================= */
-
-const EXPENSE_STORAGE_KEY =
-  "auto_finance_expenses";
-
-const DATA_UPDATED_EVENT =
-  "auto-finance:data-updated";
+import { apiDelete, apiGet, apiPost, apiPut, notifyDataUpdated } from "./api";
 
 /* =========================================================
    HELPERS
@@ -201,223 +196,50 @@ export const getExpenseReportDate = (
    GET ALL EXPENSES
 ========================================================= */
 
-export const getExpenses = () => {
+export const getExpenses = async () => {
   try {
-    const stored =
-      localStorage.getItem(
-        EXPENSE_STORAGE_KEY
-      );
+    const expenses = await apiGet("/expenses");
 
-    if (!stored) {
-      return [];
-    }
-
-    const parsed =
-      JSON.parse(stored);
-
-    return Array.isArray(
-      parsed
-    )
-      ? parsed
-      : [];
+    return Array.isArray(expenses) ? expenses : [];
   } catch (error) {
-    console.error(
-      "Failed to read expenses:",
-      error
-    );
+    console.error("Failed to read expenses:", error);
 
     return [];
   }
 };
 
 /* =========================================================
-   SAVE ALL EXPENSES
+   CREATE
 ========================================================= */
 
-export const saveExpenses = (
-  expenses
-) => {
-  const safeExpenses =
-    Array.isArray(
-      expenses
-    )
-      ? expenses
-      : [];
+export const addExpense = async (expense = {}) => {
+  const saved = await apiPost("/expenses", expense);
 
-  localStorage.setItem(
-    EXPENSE_STORAGE_KEY,
-    JSON.stringify(
-      safeExpenses
-    )
-  );
+  notifyDataUpdated();
 
-  if (
-    typeof window !==
-    "undefined"
-  ) {
-    window.dispatchEvent(
-      new CustomEvent(
-        DATA_UPDATED_EVENT
-      )
-    );
-  }
+  return saved;
 };
 
 /* =========================================================
-   GENERATE EXPENSE ID
+   UPDATE
 ========================================================= */
 
-const createExpenseId = (
-  expenses
-) => {
-  const highestNumber =
-    expenses.reduce(
-      (
-        max,
-        expense
-      ) => {
-        const match =
-          String(
-            expense?.id || ""
-          ).match(
-            /^EXP-(\d+)$/
-          );
+export const updateExpense = async (expenseId, updates = {}) => {
+  const saved = await apiPut(`/expenses/${expenseId}`, updates);
 
-        if (!match) {
-          return max;
-        }
+  notifyDataUpdated();
 
-        return Math.max(
-          max,
-          Number(
-            match[1]
-          )
-        );
-      },
-      0
-    );
-
-  return `EXP-${String(
-    highestNumber + 1
-  ).padStart(
-    4,
-    "0"
-  )}`;
+  return saved;
 };
 
 /* =========================================================
-   ADD EXPENSE
+   DELETE
 ========================================================= */
 
-export const addExpense = (
-  expense = {}
-) => {
-  const expenses =
-    getExpenses();
+export const deleteExpense = async (expenseId) => {
+  await apiDelete(`/expenses/${expenseId}`);
 
-  const now =
-    new Date().toISOString();
-
-  const newExpense = {
-    ...expense,
-
-    id:
-      expense?.id ||
-      createExpenseId(
-        expenses
-      ),
-
-    createdAt:
-      expense?.createdAt ||
-      now,
-
-    updatedAt:
-      now,
-  };
-
-  const updatedExpenses = [
-    newExpense,
-    ...expenses,
-  ];
-
-  saveExpenses(
-    updatedExpenses
-  );
-
-  return newExpense;
-};
-
-/* =========================================================
-   UPDATE EXPENSE
-========================================================= */
-
-export const updateExpense = (
-  expenseId,
-  updatedExpense = {}
-) => {
-  const expenses =
-    getExpenses();
-
-  const updatedExpenses =
-    expenses.map(
-      (expense) =>
-        String(
-          expense?.id
-        ) ===
-        String(
-          expenseId
-        )
-          ? {
-              ...expense,
-              ...updatedExpense,
-              id: expense.id,
-              updatedAt:
-                new Date().toISOString(),
-            }
-          : expense
-    );
-
-  saveExpenses(
-    updatedExpenses
-  );
-
-  return (
-    updatedExpenses.find(
-      (expense) =>
-        String(
-          expense?.id
-        ) ===
-        String(
-          expenseId
-        )
-    ) || null
-  );
-};
-
-/* =========================================================
-   DELETE EXPENSE
-========================================================= */
-
-export const deleteExpense = (
-  expenseId
-) => {
-  const expenses =
-    getExpenses();
-
-  const updatedExpenses =
-    expenses.filter(
-      (expense) =>
-        String(
-          expense?.id
-        ) !==
-        String(
-          expenseId
-        )
-    );
-
-  saveExpenses(
-    updatedExpenses
-  );
+  notifyDataUpdated();
 
   return true;
 };
@@ -426,43 +248,13 @@ export const deleteExpense = (
    GET ONE
 ========================================================= */
 
-export const getExpenseById = (
-  expenseId
-) => {
-  const expenses =
-    getExpenses();
+export const getExpenseById = async (expenseId) => {
+  try {
+    return await apiGet(`/expenses/${expenseId}`);
+  } catch (error) {
+    console.error("Failed to load expense:", error);
 
-  return (
-    expenses.find(
-      (expense) =>
-        String(
-          expense?.id
-        ) ===
-        String(
-          expenseId
-        )
-    ) || null
-  );
-};
-
-/* =========================================================
-   CLEAR ALL
-========================================================= */
-
-export const clearExpenses = () => {
-  localStorage.removeItem(
-    EXPENSE_STORAGE_KEY
-  );
-
-  if (
-    typeof window !==
-    "undefined"
-  ) {
-    window.dispatchEvent(
-      new CustomEvent(
-        DATA_UPDATED_EVENT
-      )
-    );
+    return null;
   }
 };
 
@@ -470,8 +262,8 @@ export const clearExpenses = () => {
    STATUS HELPERS
 ========================================================= */
 
-export const getPaidExpenses = () => {
-  return getExpenses().filter(
+export const getPaidExpenses = async () => {
+  return (await getExpenses()).filter(
     (expense) =>
       normalize(
         expense?.status
@@ -480,8 +272,8 @@ export const getPaidExpenses = () => {
   );
 };
 
-export const getPendingExpenses = () => {
-  return getExpenses().filter(
+export const getPendingExpenses = async () => {
+  return (await getExpenses()).filter(
     (expense) =>
       normalize(
         expense?.status
@@ -494,14 +286,14 @@ export const getPendingExpenses = () => {
    EXPENSE TOTAL
 ========================================================= */
 
-export const getTotalExpense = ({
+export const getTotalExpense = async ({
   startDate = "",
   endDate = "",
   status = "Paid",
   search = "",
 } = {}) => {
   const records =
-    getExpenseHistory({
+    await getExpenseHistory({
       startDate,
       endDate,
       status,
@@ -580,7 +372,7 @@ const expenseMatchesDateRange = (
    EXPENSE HISTORY
 ========================================================= */
 
-export const getExpenseHistory = ({
+export const getExpenseHistory = async ({
   startDate = "",
   endDate = "",
   status = "",
@@ -590,7 +382,7 @@ export const getExpenseHistory = ({
   search = "",
 } = {}) => {
   const expenses =
-    getExpenses();
+    await getExpenses();
 
   const query =
     normalize(
@@ -719,7 +511,7 @@ export const getExpenseHistory = ({
 ========================================================= */
 
 export const getExpenseHistoryByDateRange =
-  (
+  async (
     startDate,
     endDate,
     options = {}
@@ -736,7 +528,7 @@ export const getExpenseHistoryByDateRange =
 ========================================================= */
 
 export const getExpenseHistorySummary =
-  ({
+  async ({
     startDate = "",
     endDate = "",
     status = "",
@@ -744,7 +536,7 @@ export const getExpenseHistorySummary =
     search = "",
   } = {}) => {
     const records =
-      getExpenseHistory({
+      await getExpenseHistory({
         startDate,
         endDate,
         status,
@@ -1144,12 +936,12 @@ export const getExpenseHistorySummary =
 ========================================================= */
 
 export const getMonthlyExpenseSummary =
-  ({
+  async ({
     status = "Paid",
     year = null,
   } = {}) => {
     const expenses =
-      getExpenses();
+      await getExpenses();
 
     const grouped =
       {};
@@ -1359,9 +1151,9 @@ export const getTodayExpenseSummary =
 ========================================================= */
 
 export const getExpenseStatusSummary =
-  () => {
+  async () => {
     const expenses =
-      getExpenses();
+      await getExpenses();
 
     const paid =
       expenses.filter(
@@ -1436,13 +1228,11 @@ export const getExpenseTotal =
 
 export default {
   getExpenses,
-  saveExpenses,
 
   addExpense,
   updateExpense,
   deleteExpense,
   getExpenseById,
-  clearExpenses,
 
   getPaidExpenses,
   getPendingExpenses,

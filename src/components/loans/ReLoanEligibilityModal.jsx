@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, LoaderCircle, X, AlertTriangle } from "lucide-react";
 import {
   checkReLoanEligibility,
@@ -7,13 +7,31 @@ import {
 } from "../../services/reloanStorage";
 
 const ReLoanEligibilityModal = ({ loan, customer, vehicle, onClose, onViewResult }) => {
-  const result = useMemo(
-    () => checkReLoanEligibility({ customer, loan, vehicle, rules: getReLoanRules() }),
-    [customer, loan, vehicle]
-  );
+  // The rule set comes from the server, so the check runs once it arrives.
+  const [result, setResult] = useState(null);
   const [visibleCount, setVisibleCount] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
+
+    getReLoanRules().then((rules) => {
+      if (!cancelled) {
+        setResult(
+          checkReLoanEligibility({ customer, loan, vehicle, rules })
+        );
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [customer, loan, vehicle]);
+
+  useEffect(() => {
+    if (!result) {
+      return undefined;
+    }
+
     const timer = window.setInterval(() => {
       setVisibleCount((count) => {
         if (count >= result.checks.length) {
@@ -26,11 +44,16 @@ const ReLoanEligibilityModal = ({ loan, customer, vehicle, onClose, onViewResult
     return () => window.clearInterval(timer);
   }, [result]);
 
-  const complete = visibleCount >= result.checks.length;
-  const handleViewResult = () => {
-    const saved = saveReLoanEligibility(result);
+  const complete = Boolean(result) && visibleCount >= result.checks.length;
+
+  const handleViewResult = async () => {
+    const saved = await saveReLoanEligibility(result);
     onViewResult(saved);
   };
+
+  if (!result) {
+    return null;
+  }
 
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" onClick={onClose}>

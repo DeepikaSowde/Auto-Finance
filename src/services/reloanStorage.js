@@ -2,6 +2,7 @@ import {
   getCustomers,
   getCustomerById,
 } from "./customerStorage";
+import { apiGet, apiPost, apiPut, notifyDataUpdated } from "./api";
 import {
   getRepaymentBuckets,
   getScheduleRemainingAmount,
@@ -12,8 +13,6 @@ import {
   getVehicleById,
 } from "./vehicleStorage";
 
-const RELOAN_RULES_KEY = "auto_finance_reloan_rules";
-const RELOAN_ELIGIBILITY_KEY = "auto_finance_reloan_eligibility";
 
 export const DEFAULT_RELOAN_RULES = {
   minimumPaidInstallmentPercentage: 75,
@@ -250,27 +249,22 @@ const getOverdueMetrics = (loan, referenceDate = new Date()) => {
   };
 };
 
-export const getReLoanRules = () => {
+export const getReLoanRules = async () => {
   try {
-    const stored = JSON.parse(
-      localStorage.getItem(RELOAN_RULES_KEY) || "null"
-    );
-    return {
-      ...DEFAULT_RELOAN_RULES,
-      ...(stored || {}),
-    };
-  } catch {
+    return { ...DEFAULT_RELOAN_RULES, ...(await apiGet("/reloan/rules")) };
+  } catch (error) {
+    console.error("Failed to load re-loan rules:", error);
+
     return { ...DEFAULT_RELOAN_RULES };
   }
 };
 
-export const saveReLoanRules = (rules = {}) => {
-  const next = {
-    ...DEFAULT_RELOAN_RULES,
-    ...rules,
-  };
-  localStorage.setItem(RELOAN_RULES_KEY, JSON.stringify(next));
-  return next;
+export const saveReLoanRules = async (rules = {}) => {
+  const saved = await apiPut("/reloan/rules", rules);
+
+  notifyDataUpdated();
+
+  return saved;
 };
 
 export const getCustomerLoans = (customerRecord) => {
@@ -513,27 +507,27 @@ export const checkReLoanEligibility = ({
   };
 };
 
-export const saveReLoanEligibility = (result) => {
-  const all = (() => {
-    try {
-      return JSON.parse(localStorage.getItem(RELOAN_ELIGIBILITY_KEY) || "{}") || {};
-    } catch {
-      return {};
-    }
-  })();
-  const id = `${result?.loanId || "loan"}-${Date.now()}`;
-  all[id] = { ...result, id };
-  localStorage.setItem(RELOAN_ELIGIBILITY_KEY, JSON.stringify(all));
-  return all[id];
+export const saveReLoanEligibility = async (result) => {
+  const saved = await apiPost("/reloan/eligibility", result);
+
+  notifyDataUpdated();
+
+  return saved;
 };
 
-export const getReLoanEligibility = (loanId) => {
+/**
+ * Most recent eligibility check recorded for a loan.
+ */
+export const getReLoanEligibility = async (loanId) => {
   try {
-    const all = JSON.parse(localStorage.getItem(RELOAN_ELIGIBILITY_KEY) || "{}") || {};
-    return Object.values(all)
-      .filter((result) => String(result?.loanId) === String(loanId))
-      .sort((a, b) => new Date(b.checkedAt) - new Date(a.checkedAt))[0] || null;
-  } catch {
+    const checks = await apiGet(
+      `/reloan/eligibility?loanId=${encodeURIComponent(loanId || "")}`
+    );
+
+    return Array.isArray(checks) ? checks[0] || null : null;
+  } catch (error) {
+    console.error("Failed to load re-loan eligibility:", error);
+
     return null;
   }
 };

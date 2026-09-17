@@ -750,7 +750,7 @@ export const getLedgerTransactions = async () => {
    * remains untouched.
    */
   const expenses =
-    getExpenses().map(
+    (await getExpenses()).map(
       (expense) =>
         expenseTransaction(
           expense,

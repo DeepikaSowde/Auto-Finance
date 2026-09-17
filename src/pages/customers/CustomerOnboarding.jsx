@@ -43,7 +43,6 @@ import {
 import {
   allocateInvestmentPoolToLoan,
   getInvestmentPoolSummary,
-  getNextInvestorTransactionId,
 } from "../../services/investorStorage";
 
 import {
@@ -533,7 +532,7 @@ const updateVehicleData = useCallback(
       );
 
       const fundingSummary =
-        getInvestmentPoolSummary();
+        await getInvestmentPoolSummary();
 
       if (
         !Number.isFinite(loanAmount) ||
@@ -553,8 +552,6 @@ const updateVehicleData = useCallback(
         );
       }
 
-      const fundingTransactionId =
-        getNextInvestorTransactionId();
 
       /*
        * The API assigns the customer, vehicle and loan identifiers and
@@ -576,7 +573,6 @@ const updateVehicleData = useCallback(
             source: "investment-pool",
             fundedAmount: loanAmount,
             allocationDate: now,
-            fundingTransactionId,
           },
 
           ...(reLoanParams.isReLoan
@@ -612,7 +608,7 @@ const updateVehicleData = useCallback(
               reLoanParams.previousLoanId
             ))?.loan,
             vehicle: formData.vehicle,
-            rules: getReLoanRules(),
+            rules: await getReLoanRules(),
           });
 
         if (!eligibility.eligible) {
@@ -639,12 +635,11 @@ const updateVehicleData = useCallback(
           savedRecord?.loan
         : savedRecord?.loan;
 
-      allocateInvestmentPoolToLoan({
+      await allocateInvestmentPoolToLoan({
         amount: loanAmount,
         loanId: savedLoan?.id,
         loanNumber: savedLoan?.loanNumber,
         date: now,
-        transactionId: fundingTransactionId,
       });
 
       navigate("/customers");

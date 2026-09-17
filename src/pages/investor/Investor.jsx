@@ -41,8 +41,13 @@ const emptyForm = () => ({
 });
 
 const Investor = () => {
-  const [investors, setInvestors] = useState(() => getInvestorSummaries());
-  const [summary, setSummary] = useState(() => getFundingSummary());
+  const [investors, setInvestors] = useState([]);
+  const [summary, setSummary] = useState({
+    totalInvestors: 0,
+    totalInvestment: 0,
+    distributedToLoans: 0,
+    availableInvestmentBalance: 0,
+  });
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -50,12 +55,19 @@ const Investor = () => {
   const [error, setError] = useState("");
   const [investmentForm, setInvestmentForm] = useState({ amount: "", date: new Date().toISOString().slice(0, 10), reference: "" });
 
-  const reload = () => {
-    setInvestors(getInvestorSummaries());
-    setSummary(getFundingSummary());
+  const reload = async () => {
+    const [loadedInvestors, loadedSummary] = await Promise.all([
+      getInvestorSummaries(),
+      getFundingSummary(),
+    ]);
+
+    setInvestors(loadedInvestors);
+    setSummary(loadedSummary);
   };
 
   useEffect(() => {
+    reload();
+
     window.addEventListener("auto-finance:data-updated", reload);
     window.addEventListener("fleetopz:data-updated", reload);
     window.addEventListener("storage", reload);
@@ -85,27 +97,27 @@ const Investor = () => {
     });
   };
 
-  const submitInvestor = (event) => {
+  const submitInvestor = async (event) => {
     event.preventDefault();
     setError("");
     try {
-      createInvestor(form);
+      await createInvestor(form);
       setForm(emptyForm());
       setShowForm(false);
-      reload();
+      await reload();
     } catch (submitError) {
       setError(submitError.message || "Unable to add investor.");
     }
   };
 
-  const submitAdditionalInvestment = (event) => {
+  const submitAdditionalInvestment = async (event) => {
     event.preventDefault();
     setError("");
     try {
-      addInvestorInvestment({ investorId: selected.id, ...investmentForm });
+      await addInvestorInvestment({ investorId: selected.id, ...investmentForm });
       setInvestmentForm({ amount: "", date: new Date().toISOString().slice(0, 10), reference: "" });
-      reload();
-      setSelected(getInvestorSummaries().find((item) => item.id === selected.id));
+      await reload();
+      setSelected((await getInvestorSummaries()).find((item) => item.id === selected.id));
     } catch (submitError) {
       setError(submitError.message || "Unable to record investment.");
     }
@@ -165,9 +177,23 @@ const Field = ({ label, required, value, onChange, type = "text", options }) => 
 const InvestorModal = ({ form, error, updateForm, onSubmit, onClose }) => <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/40 p-3"><form onSubmit={onSubmit} className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl"><div className="sticky top-0 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4"><div><h2 className="text-lg font-extrabold text-[#17221D]">Add Investor</h2><p className="text-[11px] text-slate-500">Create a capital source for loan disbursement.</p></div><button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-50"><X size={18} /></button></div><div className="grid gap-4 p-5 sm:grid-cols-2"><Field label="Investor Name" required value={form.name} onChange={(value) => updateForm("name", value)} /><Field label="Mobile Number" required value={form.mobileNumber} onChange={(value) => updateForm("mobileNumber", value)} /><Field label="Email" value={form.email} onChange={(value) => updateForm("email", value)} /><Field label="Investor Type" value={form.investorType} onChange={(value) => updateForm("investorType", value)} options={["Individual", "Company", "Institution", "Other"]} /><Field label="Address" value={form.address} onChange={(value) => updateForm("address", value)} /><Field label="City" value={form.city} onChange={(value) => updateForm("city", value)} /><Field label="State" value={form.state} onChange={(value) => updateForm("state", value)} /><Field label="Pincode" value={form.pincode} onChange={(value) => updateForm("pincode", value)} /><Field label="PAN" value={form.pan} onChange={(value) => updateForm("pan", value)} /><Field label="Bank Account Name" value={form.bankDetails.accountName} onChange={(value) => updateForm("bankDetails.accountName", value)} /><Field label="Bank Account Number" value={form.bankDetails.accountNumber} onChange={(value) => updateForm("bankDetails.accountNumber", value)} /><Field label="IFSC Code" value={form.bankDetails.ifsc} onChange={(value) => updateForm("bankDetails.ifsc", value)} /><div className="sm:col-span-2"><h3 className="mb-2 text-xs font-extrabold uppercase tracking-wide text-[#0B6B43]">Investment Information</h3><div className="grid gap-3 sm:grid-cols-2"><Field label="Initial Investment Amount" required type="number" value={form.investment.initialAmount} onChange={(value) => updateForm("investment.initialAmount", value)} /><Field label="Investment Date" required type="date" value={form.investment.investmentDate} onChange={(value) => updateForm("investment.investmentDate", value)} /><Field label="Reference / Transaction ID" value={form.investment.referenceNumber} onChange={(value) => updateForm("investment.referenceNumber", value)} /><Field label="Investment Mode" value={form.investment.investmentMode} onChange={(value) => updateForm("investment.investmentMode", value)} options={["Bank Transfer", "Cash", "Cheque", "Other"]} /></div></div><label className="sm:col-span-2"><span className="text-[10px] font-bold text-slate-600">Remarks</span><textarea value={form.remarks} onChange={(event) => updateForm("remarks", event.target.value)} className="mt-1 min-h-20 w-full rounded-lg border border-slate-200 p-2.5 text-xs outline-none focus:border-[#9CCEB1]" /></label>{error && <p className="sm:col-span-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{error}</p>}</div><div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3"><button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600">Cancel</button><button type="submit" className="rounded-lg bg-[#0B6B43] px-4 py-2 text-xs font-extrabold text-white">Create Investor</button></div></form></div>;
 
 const InvestorDetails = ({ investor, error, investmentForm, setInvestmentForm, onAddInvestment, onClose }) => {
-  const transactions = getInvestorTransactions(investor.id).filter(
-    (transaction) => transaction.type === "Investment"
-  );
+  const [transactions, setTransactions] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getInvestorTransactions(investor.id).then((rows) => {
+      if (!cancelled) {
+        setTransactions(
+          rows.filter((transaction) => transaction.type === "Investment")
+        );
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [investor.id]);
   const fundedLoans = [];
   return <div className="fixed inset-0 z-[110] flex justify-end bg-slate-950/40"><section className="h-full w-full max-w-2xl overflow-y-auto bg-white shadow-2xl"><div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4"><div><p className="text-[9px] font-bold uppercase tracking-wide text-[#0B6B43]">Investor Details</p><h2 className="mt-1 text-lg font-extrabold text-[#17221D]">{investor.name}</h2><p className="text-[10px] text-slate-500">{investor.id} · {investor.status}</p></div><button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-50"><X size={18} /></button></div><div className="space-y-5 p-5"><div className="grid grid-cols-3 gap-2"><Metric label="Total Invested" value={money(investor.investment.totalInvested)} /><Metric label="Allocated" value={money(investor.investment.allocatedAmount)} /><Metric label="Available" value={money(investor.investment.availableBalance)} prominent /></div><form onSubmit={onAddInvestment} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><p className="mb-2 text-xs font-extrabold text-[#17221D]">Add Investment</p><div className="grid gap-2 sm:grid-cols-3"><input required type="number" min="0.01" placeholder="Amount" value={investmentForm.amount} onChange={(event) => setInvestmentForm({ ...investmentForm, amount: event.target.value })} className="h-9 rounded-lg border border-slate-200 px-2 text-xs" /><input required type="date" value={investmentForm.date} onChange={(event) => setInvestmentForm({ ...investmentForm, date: event.target.value })} className="h-9 rounded-lg border border-slate-200 px-2 text-xs" /><button type="submit" className="rounded-lg bg-[#0B6B43] px-3 text-xs font-extrabold text-white">Record Investment</button></div>{error && <p className="mt-2 text-xs font-semibold text-red-700">{error}</p>}</form><DetailsTable title="Funded Loans" headers={["Loan", "Customer", "Allocated", "Date", "Status"]}>{fundedLoans.map((item) => <tr key={item.id} className="border-b border-slate-100"><td className="px-3 py-2 text-xs font-bold">{item.loanNumber}</td><td className="px-3 py-2 text-xs">{loanRecord(item.loanNumber)?.customer?.personal?.name || "—"}</td><td className="px-3 py-2 text-xs font-bold">{money(item.amount)}</td><td className="px-3 py-2 text-xs">{dateLabel(item.date)}</td><td className="px-3 py-2 text-xs">{loanRecord(item.loanNumber)?.loan?.status || "—"}</td></tr>)}</DetailsTable><DetailsTable title="Funding Transactions" headers={["Date", "Type", "Amount", "Reference"]}>{transactions.map((item) => <tr key={item.id} className="border-b border-slate-100"><td className="px-3 py-2 text-xs">{dateLabel(item.date)}</td><td className="px-3 py-2 text-xs font-bold">{item.type}</td><td className="px-3 py-2 text-xs font-bold">{money(item.amount)}</td><td className="px-3 py-2 text-xs">{item.reference || item.loanNumber || "—"}</td></tr>)}</DetailsTable></div></section></div>;
 };

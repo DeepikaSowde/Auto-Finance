@@ -41,13 +41,27 @@ import {
    MAIN
 ========================================================= */
 
+/*
+ * Seeded so the history panel renders before the first fetch resolves.
+ */
+const EMPTY_EXPENSE_SUMMARY = {
+  totalAmount: 0,
+  totalRecords: 0,
+  paidAmount: 0,
+  paidCount: 0,
+  pendingAmount: 0,
+  pendingCount: 0,
+  averageExpense: 0,
+  byCategory: [],
+  byMonth: [],
+  highestExpense: null,
+};
+
 const ExpenseControl = () => {
   const [
     expenses,
     setExpenses,
-  ] = useState(
-    () => getExpenses()
-  );
+  ] = useState([]);
 
   const [
     search,
@@ -129,9 +143,9 @@ const ExpenseControl = () => {
 
   useEffect(() => {
     const reloadExpenses =
-      () => {
+      async () => {
         setExpenses(
-          getExpenses()
+          await getExpenses()
         );
       };
 
@@ -541,43 +555,38 @@ const ExpenseControl = () => {
      HISTORY RECORDS
   ======================================================= */
 
-  const historyRecords =
-    useMemo(() => {
-      return getExpenseHistory({
-        startDate:
-          historyRange.startDate,
-        endDate:
-          historyRange.endDate,
-        status:
-          "Paid",
-        search:
-          historySearch,
-      });
-    }, [
-      historyRange,
-      historySearch,
-    ]);
+  const [historyRecords, setHistoryRecords] =
+    useState([]);
 
-  /* =======================================================
-     HISTORY SUMMARY
-  ======================================================= */
+  const [historySummary, setHistorySummary] =
+    useState(EMPTY_EXPENSE_SUMMARY);
 
-  const historySummary =
-    useMemo(() => {
-      return getExpenseHistorySummary({
-        startDate:
-          historyRange.startDate,
-        endDate:
-          historyRange.endDate,
-        status:
-          "Paid",
-        search:
-          historySearch,
-      });
-    }, [
-      historyRange,
-      historySearch,
-    ]);
+  useEffect(() => {
+    let cancelled = false;
+
+    const query = {
+      startDate: historyRange.startDate,
+      endDate: historyRange.endDate,
+      status: "Paid",
+      search: historySearch,
+    };
+
+    Promise.all([
+      getExpenseHistory(query),
+      getExpenseHistorySummary(query),
+    ]).then(([records, summary]) => {
+      if (cancelled) {
+        return;
+      }
+
+      setHistoryRecords(records);
+      setHistorySummary(summary);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [historyRange, historySearch]);
 
   /* =======================================================
      RESET FILTERS
@@ -603,24 +612,24 @@ const ExpenseControl = () => {
   ======================================================= */
 
   const handleSaveExpense =
-    (
+    async (
       expense
     ) => {
       if (
         editingExpense
       ) {
-        updateExpense(
+        await updateExpense(
           editingExpense.id,
           expense
         );
       } else {
-        addExpense(
+        await addExpense(
           expense
         );
       }
 
       setExpenses(
-        getExpenses()
+        await getExpenses()
       );
 
       setShowAddModal(
@@ -658,15 +667,15 @@ const ExpenseControl = () => {
   ======================================================= */
 
   const handleDeleteExpense =
-    (
+    async (
       expenseId
     ) => {
-      deleteExpense(
+      await deleteExpense(
         expenseId
       );
 
       setExpenses(
-        getExpenses()
+        await getExpenses()
       );
 
       setSelectedExpense(
