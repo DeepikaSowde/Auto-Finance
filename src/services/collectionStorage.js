@@ -1,22 +1,12 @@
 // src/services/collectionStorage.js
 
-import {
-  getCustomers,
-} from "./customerStorage";
+// Collections are stored and approved server-side. Approval runs the
+// payment-allocation waterfall against the loan's installments inside a
+// database transaction (see backend/src/services/collectionRepository.js),
+// so this module is a thin client plus the reporting/aggregation helpers
+// the collection pages render.
 
-import {
-  processRepayment,
-} from "./repaymentStorage";
-
-/* =========================================================
-   STORAGE
-========================================================= */
-
-const COLLECTION_STORAGE_KEY =
-  "auto_finance_collections";
-
-const DATA_UPDATED_EVENT =
-  "auto-finance:data-updated";
+import { apiGet, apiPost, notifyDataUpdated } from "./api";
 
 /* =========================================================
    COLLECTION STATUS
@@ -52,71 +42,16 @@ export const COLLECTION_PAYMENT_TYPE = {
    STORAGE READ
 ========================================================= */
 
-export const getCollections = () => {
+export const getCollections = async () => {
   try {
-    const stored =
-      localStorage.getItem(
-        COLLECTION_STORAGE_KEY
-      );
+    const collections = await apiGet("/collections");
 
-    if (!stored) {
-      return [];
-    }
-
-    const parsed =
-      JSON.parse(stored);
-
-    return Array.isArray(parsed)
-      ? parsed
-      : [];
+    return Array.isArray(collections) ? collections : [];
   } catch (error) {
-    console.error(
-      "Failed to read collections:",
-      error
-    );
+    console.error("Failed to read collections:", error);
 
     return [];
   }
-};
-
-/* =========================================================
-   EVENT
-========================================================= */
-
-const dispatchUpdate = () => {
-  if (
-    typeof window ===
-    "undefined"
-  ) {
-    return;
-  }
-
-  window.dispatchEvent(
-    new CustomEvent(
-      DATA_UPDATED_EVENT
-    )
-  );
-};
-
-/* =========================================================
-   SAVE
-========================================================= */
-
-const saveCollections = (
-  collections
-) => {
-  localStorage.setItem(
-    COLLECTION_STORAGE_KEY,
-    JSON.stringify(
-      Array.isArray(
-        collections
-      )
-        ? collections
-        : []
-    )
-  );
-
-  dispatchUpdate();
 };
 
 /* =========================================================
@@ -309,1085 +244,104 @@ const endOfDay = (
 };
 
 /* =========================================================
-   ID
-========================================================= */
-
-const createCollectionId = (
-  collections
-) => {
-  const highest =
-    collections.reduce(
-      (
-        max,
-        item
-      ) => {
-        const match =
-          String(
-            item?.id || ""
-          ).match(
-            /^COL-(\d+)$/
-          );
-
-        if (!match) {
-          return max;
-        }
-
-        return Math.max(
-          max,
-          Number(
-            match[1]
-          )
-        );
-      },
-      0
-    );
-
-  return `COL-${String(
-    highest + 1
-  ).padStart(
-    4,
-    "0"
-  )}`;
-};
-
-/* =========================================================
    CREATE COLLECTION
 ========================================================= */
 
-export const addCollection = (
-  collection = {}
-) => {
-  const collections =
-    getCollections();
+/* =========================================================
+   CREATE COLLECTION
 
-  const now =
-    new Date().toISOString();
+   The server validates the loan, stores the submission as
+   Pending and assigns the collection id.
+========================================================= */
 
-  const amount =
-    roundMoney(
-      collection?.amount
-    );
+export const addCollection = async (collection = {}) => {
+  const saved = await apiPost("/collections", collection);
 
-  const dueAmount =
-    roundMoney(
-      collection?.dueAmount
-    );
+  notifyDataUpdated();
 
-  const penaltyAmount =
-    roundMoney(
-      collection?.penaltyAmount
-    );
-
-  const totalPayable =
-    roundMoney(
-      collection?.totalPayable ??
-        dueAmount +
-          penaltyAmount
-    );
-
-  const newCollection = {
-    ...collection,
-
-    id:
-      collection?.id ||
-      createCollectionId(
-        collections
-      ),
-
-    status:
-      COLLECTION_STATUS.PENDING,
-
-    submittedAt:
-      collection?.submittedAt ||
-      now,
-
-    collectedDate:
-      collection?.collectedDate ||
-      now,
-
-    approvedAt:
-      null,
-
-    approvedBy:
-      null,
-
-    rejectedAt:
-      null,
-
-    rejectedBy:
-      null,
-
-    rejectionRemarks:
-      "",
-
-    reversedAt:
-      null,
-
-    reversedBy:
-      null,
-
-    reversalReason:
-      "",
-
-    amount,
-
-    dueAmount,
-
-    penaltyAmount,
-
-    totalPayable,
-
-    repaymentProcessed:
-      false,
-
-    repaymentProcessedAt:
-      null,
-
-    repaymentProcessingStatus:
-      "Pending",
-
-    repaymentError:
-      "",
-
-    paymentType:
-      collection?.paymentType ||
-      "Payment",
-
-    amountTowardDue:
-      roundMoney(
-        collection?.amountTowardDue
-      ),
-
-    amountTowardPenalty:
-      roundMoney(
-        collection?.amountTowardPenalty
-      ),
-
-    amountTowardAdvance:
-      roundMoney(
-        collection?.amountTowardAdvance
-      ),
-
-    amountTowardPrincipal:
-      roundMoney(
-        collection?.amountTowardPrincipal
-      ),
-
-    amountExcess:
-      roundMoney(
-        collection?.amountExcess
-      ),
-
-    allocation:
-      collection?.allocation ||
-      null,
-
-    repayment:
-      collection?.repayment ||
-      null,
-
-    overdueDays:
-      toNumber(
-        collection?.overdueDays
-      ),
-
-    graceDays:
-      toNumber(
-        collection?.graceDays
-      ),
-
-    penaltyDays:
-      toNumber(
-        collection?.penaltyDays
-      ),
-
-    penaltyType:
-      collection?.penaltyType ||
-      "Fixed",
-
-    penaltyRate:
-      toNumber(
-        collection?.penaltyRate
-      ),
-
-    createdAt:
-      collection?.createdAt ||
-      now,
-
-    updatedAt:
-      now,
-  };
-
-  /*
-   * APPEND ONLY.
-   * Historical collection records
-   * must never be overwritten.
-   */
-  saveCollections([
-    ...collections,
-    newCollection,
-  ]);
-
-  return newCollection;
+  return saved;
 };
 
 /* =========================================================
-   UPDATE COLLECTION
+   READ ONE
 ========================================================= */
 
-export const updateCollection = (
-  collectionId,
-  updates = {}
-) => {
-  const collections =
-    getCollections();
-
-  let result = null;
-
-  const updated =
-    collections.map(
-      (item) => {
-        if (
-          String(
-            item?.id
-          ) !==
-          String(
-            collectionId
-          )
-        ) {
-          return item;
-        }
-
-        result = {
-          ...item,
-          ...updates,
-          updatedAt:
-            new Date().toISOString(),
-        };
-
-        return result;
-      }
-    );
-
-  saveCollections(
-    updated
-  );
-
-  return result;
-};
-
-/* =========================================================
-   FIND CUSTOMER + LOAN
-========================================================= */
-
-const findCustomerLoan = (
-  customers,
-  collection
-) => {
-  const collectionLoanId =
-    collection?.loanId ||
-    "";
-
-  const collectionLoanNumber =
-    collection?.loanNumber ||
-    "";
-
-  const customerId =
-    collection?.customerId ||
-    "";
-
-  /*
-   * First attempt:
-   * Customer + Loan
-   */
-  for (
-    const customer of customers
-  ) {
-    const storedCustomerId =
-      customer?.customer?.id ||
-      customer?.customer?.customerId ||
-      customer?.customer?.customerNumber ||
-      "";
-
-    if (
-      customerId &&
-      String(
-        storedCustomerId
-      ) !==
-        String(
-          customerId
-        )
-    ) {
-      continue;
-    }
-
-    const loans = [
-      customer?.loan,
-      ...(
-        Array.isArray(
-          customer?.loans
-        )
-          ? customer.loans
-          : []
-      ),
-    ].filter(Boolean);
-
-    const loan =
-      loans.find(
-        (candidate) => {
-          const matchesId =
-            Boolean(
-              collectionLoanId
-            ) &&
-            String(
-              candidate?.id ||
-                ""
-            ) ===
-              String(
-                collectionLoanId
-              );
-
-          const matchesNumber =
-            Boolean(
-              collectionLoanNumber
-            ) &&
-            String(
-              candidate?.loanNumber ||
-                ""
-            ) ===
-              String(
-                collectionLoanNumber
-              );
-
-          return (
-            matchesId ||
-            matchesNumber
-          );
-        }
-      );
-
-    if (loan) {
-      return {
-        customer,
-        loan,
-      };
-    }
-  }
-
-  /*
-   * Fallback:
-   * Search by loan alone.
-   */
-  for (
-    const customer of customers
-  ) {
-    const loans = [
-      customer?.loan,
-      ...(
-        Array.isArray(
-          customer?.loans
-        )
-          ? customer.loans
-          : []
-      ),
-    ].filter(Boolean);
-
-    const loan =
-      loans.find(
-        (candidate) =>
-          (
-            collectionLoanId &&
-            String(
-              candidate?.id ||
-                ""
-            ) ===
-              String(
-                collectionLoanId
-              )
-          ) ||
-          (
-            collectionLoanNumber &&
-            String(
-              candidate?.loanNumber ||
-                ""
-            ) ===
-              String(
-                collectionLoanNumber
-              )
-          )
-      );
-
-    if (loan) {
-      return {
-        customer,
-        loan,
-      };
-    }
-  }
-
-  return null;
-};
-
-/* =========================================================
-   GET COLLECTION BY ID
-========================================================= */
-
-export const getCollectionById = (
-  collectionId
-) => {
-  return (
-    getCollections().find(
-      (item) =>
-        String(
-          item?.id
-        ) ===
-        String(
-          collectionId
-        )
-    ) || null
-  );
-};
-
-/* =========================================================
-   DUPLICATE PROCESSING GUARD
-========================================================= */
-
-const wasRepaymentProcessed = (
-  collection,
-  loan
-) => {
-  if (
-    normalize(
-      collection?.repaymentProcessingStatus
-    ) ===
-    "processed"
-  ) {
-    return true;
-  }
-
-  if (
-    collection?.repaymentProcessed ===
-    true
-  ) {
-    return true;
-  }
-
-  if (
-    !Array.isArray(
-      loan?.paymentHistory
-    )
-  ) {
-    return false;
-  }
-
-  return loan.paymentHistory.some(
-    (payment) =>
-      String(
-        payment?.collectionId ||
-          ""
-      ) ===
-      String(
-        collection?.id ||
-          ""
-      )
-  );
-};
-
-/* =========================================================
-   APPROVE COLLECTION
-========================================================= */
-
-export const approveCollection = (
-  collectionId,
-  admin
-) => {
-  const existing =
-    getCollectionById(
-      collectionId
-    );
-
-  if (!existing) {
-    return null;
-  }
-
-  /*
-   * Already approved and processed.
-   */
-  if (
-    normalize(
-      existing.status
-    ) ===
-      "approved" &&
-    normalize(
-      existing.repaymentProcessingStatus
-    ) ===
-      "processed"
-  ) {
-    return existing;
-  }
-
-  /*
-   * Only Pending collections
-   * may be approved.
-   */
-  if (
-    normalize(
-      existing.status
-    ) !==
-    "pending"
-  ) {
-    return existing;
-  }
-
-  /*
-   * Locate customer + loan.
-   */
-  const customers =
-    getCustomers();
-
-  const match =
-    findCustomerLoan(
-      customers,
-      existing
-    );
-
-  if (!match) {
-    return updateCollection(
-      existing.id,
-      {
-        repaymentProcessingStatus:
-          "Failed",
-
-        repaymentError:
-          "Loan not found for this collection.",
-
-        updatedAt:
-          new Date().toISOString(),
-      }
-    );
-  }
-
-  const {
-    loan,
-  } = match;
-
-  /*
-   * Duplicate protection.
-   */
-  if (
-    wasRepaymentProcessed(
-      existing,
-      loan
-    )
-  ) {
-    const repaired =
-      updateCollection(
-        existing.id,
-        {
-          status:
-            COLLECTION_STATUS.APPROVED,
-
-          approvedAt:
-            existing.approvedAt ||
-            new Date().toISOString(),
-
-          approvedBy:
-            existing.approvedBy ||
-            admin?.name ||
-            admin?.username ||
-            "Admin",
-
-          repaymentProcessed:
-            true,
-
-          repaymentProcessingStatus:
-            "Processed",
-
-          repaymentProcessedAt:
-            existing.repaymentProcessedAt ||
-            new Date().toISOString(),
-
-          repaymentError:
-            "",
-        }
-      );
-
-    return repaired;
-  }
-
-  /* =======================================================
-     PROCESS REPAYMENT
-  ======================================================== */
-
-  let repaymentResult =
-    null;
-
+export const getCollectionById = async (collectionId) => {
   try {
-    /*
-     * processRepayment expects an
-     * approved collection snapshot.
-     *
-     * Do not mutate the real record
-     * until repayment processing
-     * succeeds.
-     */
-    repaymentResult =
-      processRepayment({
-        collection: {
-          ...existing,
-
-          status:
-            COLLECTION_STATUS.APPROVED,
-        },
-
-        allocationOptions: {
-          allowAdvance:
-            true,
-
-          allowPrincipalPayment:
-            false,
-        },
-      });
+    return await apiGet(`/collections/${collectionId}`);
   } catch (error) {
-    console.error(
-      "Failed to process approved collection:",
-      error
-    );
+    console.error("Failed to load collection:", error);
 
-    return updateCollection(
-      existing.id,
-      {
-        repaymentProcessingStatus:
-          "Failed",
-
-        repaymentError:
-          error?.message ||
-          "Repayment processing failed.",
-      }
-    );
-  }
-
-  /* =======================================================
-     REPAYMENT FAILED
-  ======================================================== */
-
-  if (
-    !repaymentResult?.success
-  ) {
-    console.error(
-      "Repayment processing failed:",
-      repaymentResult
-    );
-
-    return updateCollection(
-      existing.id,
-      {
-        repaymentProcessingStatus:
-          "Failed",
-
-        repaymentError:
-          getRepaymentErrorMessage(
-            repaymentResult
-          ),
-      }
-    );
-  }
-
-  /* =======================================================
-     REPAYMENT SUCCESS
-  ======================================================== */
-
-  const approvedAt =
-    new Date().toISOString();
-
-  const approvedBy =
-    admin?.name ||
-    admin?.username ||
-    "Admin";
-
-  const allocation =
-    repaymentResult?.allocation ||
-    {};
-
-  const repaymentMeta =
-    repaymentResult?.repayment ||
-    {};
-
-  const currentCollections =
-    getCollections();
-
-  const updatedCollections =
-    currentCollections.map(
-      (item) => {
-        if (
-          String(
-            item?.id
-          ) !==
-          String(
-            existing.id
-          )
-        ) {
-          return item;
-        }
-
-        return {
-          ...item,
-
-          status:
-            COLLECTION_STATUS.APPROVED,
-
-          approvedAt,
-
-          approvedBy,
-
-          rejectedAt:
-            null,
-
-          rejectedBy:
-            null,
-
-          rejectionRemarks:
-            "",
-
-          repaymentProcessed:
-            true,
-
-          repaymentProcessingStatus:
-            "Processed",
-
-          repaymentProcessedAt:
-            approvedAt,
-
-          repaymentError:
-            "",
-
-          paymentType:
-            repaymentMeta?.paymentType ||
-            item?.paymentType ||
-            "Payment",
-
-          amountTowardDue:
-            roundMoney(
-              allocation?.overdue +
-                allocation?.currentDue
-            ),
-
-          amountTowardPenalty:
-            roundMoney(
-              allocation?.penalty
-            ),
-
-          amountTowardAdvance:
-            roundMoney(
-              allocation?.advance
-            ),
-
-          amountTowardPrincipal:
-            roundMoney(
-              allocation?.principal
-            ),
-
-          amountExcess:
-            roundMoney(
-              allocation?.excess
-            ),
-
-          allocation: {
-            ...allocation,
-
-            items:
-              Array.isArray(
-                allocation?.items
-              )
-                ? allocation.items
-                : [],
-          },
-
-          repayment:
-            repaymentMeta,
-
-          repaymentLoanStatus:
-            repaymentResult?.loanStatus ||
-            repaymentResult?.loan?.status ||
-            null,
-
-          repaymentOutstanding:
-            roundMoney(
-              repaymentResult?.outstanding
-            ),
-
-          updatedAt:
-            new Date().toISOString(),
-        };
-      }
-    );
-
-  saveCollections(
-    updatedCollections
-  );
-
-  const finalCollection =
-    updatedCollections.find(
-      (item) =>
-        String(
-          item?.id
-        ) ===
-        String(
-          existing.id
-        )
-    );
-
-  return {
-    ...finalCollection,
-
-    loanUpdate:
-      repaymentResult,
-
-    repayment:
-      repaymentResult,
-  };
-};
-
-/* =========================================================
-   REPAYMENT ERROR MESSAGE
-========================================================= */
-
-const getRepaymentErrorMessage = (
-  result
-) => {
-  if (!result) {
-    return (
-      "Unknown repayment processing error."
-    );
-  }
-
-  switch (
-    result?.reason
-  ) {
-    case "collection_required":
-      return (
-        "Collection record is required."
-      );
-
-    case "collection_not_approved":
-      return (
-        "Collection must be approved before repayment posting."
-      );
-
-    case "loan_not_found":
-      return (
-        "Loan not found for this collection."
-      );
-
-    case "loan_closed":
-      return (
-        "This loan is already closed."
-      );
-
-    case "loan_foreclosed":
-      return (
-        "This loan is already foreclosed."
-      );
-
-    case "invalid_payment_amount":
-      return (
-        "Invalid collection amount."
-      );
-
-    case "already_processed":
-      return (
-        "This collection has already been processed."
-      );
-
-    case "settlement_amount_insufficient":
-      return (
-        "The settlement amount is insufficient."
-      );
-
-    default:
-      return (
-        result?.reason ||
-        "Repayment processing failed."
-      );
-  }
-};
-
-/* =========================================================
-   REJECT COLLECTION
-========================================================= */
-
-export const rejectCollection = (
-  collectionId,
-  admin,
-  remarks = ""
-) => {
-  const existing =
-    getCollectionById(
-      collectionId
-    );
-
-  if (!existing) {
     return null;
   }
-
-  /*
-   * Only Pending can be rejected.
-   */
-  if (
-    normalize(
-      existing.status
-    ) !==
-    "pending"
-  ) {
-    return existing;
-  }
-
-  return updateCollection(
-    collectionId,
-    {
-      status:
-        COLLECTION_STATUS.REJECTED,
-
-      rejectedAt:
-        new Date().toISOString(),
-
-      rejectedBy:
-        admin?.name ||
-        admin?.username ||
-        "Admin",
-
-      rejectionRemarks:
-        remarks || "",
-
-      approvedAt:
-        null,
-
-      approvedBy:
-        null,
-
-      repaymentProcessed:
-        false,
-
-      repaymentProcessingStatus:
-        "Rejected",
-
-      repaymentError:
-        "",
-    }
-  );
 };
 
 /* =========================================================
-   REVERSE COLLECTION
+   APPROVE
+
+   Approval is the only action that moves money. The server
+   runs the allocation waterfall (penalty -> interest ->
+   principal -> advance/excess), posts it against the loan's
+   installments and records the payment history in a single
+   transaction, so a collection can never post twice.
 ========================================================= */
 
-/*
- * Audit state only.
- *
- * Does not change the loan.
- * A dedicated repayment reversal
- * process should be used for actual
- * financial reversal.
- */
+export const approveCollection = async (collectionId) => {
+  try {
+    const result = await apiPost(`/collections/${collectionId}/approve`);
 
-export const reverseCollection = (
-  collectionId,
-  admin,
-  reason = ""
-) => {
-  const existing =
-    getCollectionById(
-      collectionId
-    );
+    notifyDataUpdated();
 
-  if (!existing) {
-    return null;
+    return {
+      success: true,
+      collection: result.collection,
+      loan: result.loan,
+      allocation: result.allocation,
+    };
+  } catch (error) {
+    console.error("Failed to approve collection:", error);
+
+    return { success: false, message: error?.message || "Unable to approve this collection." };
   }
-
-  if (
-    normalize(
-      existing.status
-    ) !==
-    "approved"
-  ) {
-    return existing;
-  }
-
-  return updateCollection(
-    collectionId,
-    {
-      status:
-        COLLECTION_STATUS.REVERSED,
-
-      reversedAt:
-        new Date().toISOString(),
-
-      reversedBy:
-        admin?.name ||
-        admin?.username ||
-        "Admin",
-
-      reversalReason:
-        reason || "",
-    }
-  );
 };
 
 /* =========================================================
-   DELETE
+   REJECT
 ========================================================= */
 
-export const deleteCollection = (
-  collectionId
-) => {
-  const collections =
-    getCollections();
+export const rejectCollection = async (collectionId, remarks = "") => {
+  try {
+    const collection = await apiPost(`/collections/${collectionId}/reject`, { remarks });
 
-  const existing =
-    collections.find(
-      (item) =>
-        String(
-          item?.id
-        ) ===
-        String(
-          collectionId
-        )
-    );
+    notifyDataUpdated();
 
-  if (!existing) {
-    return false;
+    return { success: true, collection };
+  } catch (error) {
+    console.error("Failed to reject collection:", error);
+
+    return { success: false, message: error?.message || "Unable to reject this collection." };
   }
+};
 
-  /*
-   * Approved records cannot be
-   * silently deleted.
-   */
-  if (
-    normalize(
-      existing.status
-    ) ===
-    "approved"
-  ) {
-    console.warn(
-      "Approved collection cannot be deleted. Use reverseCollection()."
-    );
+/* =========================================================
+   REVERSE
 
-    return false;
+   Unwinds an approved collection: its postings are removed
+   and the affected installments are recomputed.
+========================================================= */
+
+export const reverseCollection = async (collectionId, reason = "") => {
+  try {
+    const collection = await apiPost(`/collections/${collectionId}/reverse`, { reason });
+
+    notifyDataUpdated();
+
+    return { success: true, collection };
+  } catch (error) {
+    console.error("Failed to reverse collection:", error);
+
+    return { success: false, message: error?.message || "Unable to reverse this collection." };
   }
-
-  saveCollections(
-    collections.filter(
-      (item) =>
-        String(
-          item?.id
-        ) !==
-        String(
-          collectionId
-        )
-    )
-  );
-
-  return true;
 };
 
 /* =========================================================
@@ -1395,8 +349,8 @@ export const deleteCollection = (
 ========================================================= */
 
 export const getPendingCollections =
-  () => {
-    return getCollections().filter(
+  async () => {
+    return (await getCollections()).filter(
       (item) =>
         normalize(
           item?.status
@@ -1410,8 +364,8 @@ export const getPendingCollections =
 ========================================================= */
 
 export const getApprovedCollections =
-  () => {
-    return getCollections().filter(
+  async () => {
+    return (await getCollections()).filter(
       (item) =>
         normalize(
           item?.status
@@ -1425,8 +379,8 @@ export const getApprovedCollections =
 ========================================================= */
 
 export const getRejectedCollections =
-  () => {
-    return getCollections().filter(
+  async () => {
+    return (await getCollections()).filter(
       (item) =>
         normalize(
           item?.status
@@ -1440,8 +394,8 @@ export const getRejectedCollections =
 ========================================================= */
 
 export const getReversedCollections =
-  () => {
-    return getCollections().filter(
+  async () => {
+    return (await getCollections()).filter(
       (item) =>
         normalize(
           item?.status
@@ -1455,8 +409,8 @@ export const getReversedCollections =
 ========================================================= */
 
 export const getApprovedCollectionTotal =
-  () => {
-    return getCollections()
+  async () => {
+    return (await getCollections())
       .filter(
         (item) =>
           normalize(
@@ -1482,8 +436,8 @@ export const getApprovedCollectionTotal =
 ========================================================= */
 
 export const getPendingCollectionTotal =
-  () => {
-    return getCollections()
+  async () => {
+    return (await getCollections())
       .filter(
         (item) =>
           normalize(
@@ -1509,8 +463,8 @@ export const getPendingCollectionTotal =
 ========================================================= */
 
 export const getRejectedCollectionTotal =
-  () => {
-    return getCollections()
+  async () => {
+    return (await getCollections())
       .filter(
         (item) =>
           normalize(
@@ -1536,13 +490,13 @@ export const getRejectedCollectionTotal =
 ========================================================= */
 
 export const getTodayApprovedCollectionTotal =
-  () => {
+  async () => {
     const today =
       getDateKey(
         new Date()
       );
 
-    return getCollections()
+    return (await getCollections())
       .filter(
         (item) => {
           if (
@@ -1581,11 +535,11 @@ export const getTodayApprovedCollectionTotal =
 ========================================================= */
 
 export const getCollectionsForLoan =
-  (
+  async (
     loanId,
     loanNumber
   ) => {
-    return getCollections().filter(
+    return (await getCollections()).filter(
       (item) => {
         const matchesId =
           Boolean(
@@ -1624,10 +578,10 @@ export const getCollectionsForLoan =
 ========================================================= */
 
 export const getCollectionsForCustomer =
-  (
+  async (
     customerId
   ) => {
-    return getCollections().filter(
+    return (await getCollections()).filter(
       (item) =>
         String(
           item?.customerId ||
@@ -1645,9 +599,9 @@ export const getCollectionsForCustomer =
 ========================================================= */
 
 export const getCollectionStatusCounts =
-  () => {
+  async () => {
     const collections =
-      getCollections();
+      await getCollections();
 
     return {
       total:
@@ -1863,7 +817,7 @@ const collectionMatchesDateRange = (
  * approvedOnly
  */
 
-export const getCollectionHistory = ({
+export const getCollectionHistory = async ({
   startDate = "",
   endDate = "",
   status = "",
@@ -1875,7 +829,7 @@ export const getCollectionHistory = ({
   approvedOnly = false,
 } = {}) => {
   const collections =
-    getCollections();
+    await getCollections();
 
   const query =
     normalize(
@@ -2050,7 +1004,7 @@ export const getCollectionHistory = ({
 ========================================================= */
 
 export const getCollectionHistoryByDateRange =
-  (
+  async (
     startDate,
     endDate,
     options = {}
@@ -2067,7 +1021,7 @@ export const getCollectionHistoryByDateRange =
 ========================================================= */
 
 export const getCollectionHistorySummary =
-  ({
+  async ({
     startDate = "",
     endDate = "",
     status = "",
@@ -2079,7 +1033,7 @@ export const getCollectionHistorySummary =
     approvedOnly = false,
   } = {}) => {
     const records =
-      getCollectionHistory({
+      await getCollectionHistory({
         startDate,
         endDate,
         status,
@@ -2500,12 +1454,12 @@ export const getCollectionHistorySummary =
  */
 
 export const getMonthlyCollectionSummary =
-  ({
+  async ({
     status = "Approved",
     year = null,
   } = {}) => {
     const collections =
-      getCollections();
+      await getCollections();
 
     const grouped =
       {};
@@ -2840,14 +1794,12 @@ export default {
 
   getCollections,
   addCollection,
-  updateCollection,
 
   getCollectionById,
 
   approveCollection,
   rejectCollection,
   reverseCollection,
-  deleteCollection,
 
   getPendingCollections,
   getApprovedCollections,

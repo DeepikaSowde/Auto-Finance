@@ -8,9 +8,9 @@ const useLoans = () => {
   const [loans, setLoans] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const loadLoans = () => {
+  const loadLoans = async () => {
     try {
-      const storedLoans = getLoans();
+      const storedLoans = await getLoans();
 
       setLoans(
         Array.isArray(storedLoans)

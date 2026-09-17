@@ -696,9 +696,9 @@ const expenseTransaction = (
    GET ALL LEDGER TRANSACTIONS
 ========================================================= */
 
-export const getLedgerTransactions = () => {
+export const getLedgerTransactions = async () => {
   const customers =
-    getCustomers();
+    await getCustomers();
 
   const loans =
     allLoans(customers);
@@ -710,7 +710,7 @@ export const getLedgerTransactions = () => {
    * COLLECTION INCOME
    */
   const incomes =
-    getCollections()
+    (await getCollections())
       .filter(
         (collection) =>
           String(
@@ -737,7 +737,7 @@ export const getLedgerTransactions = () => {
    * as a Ledger income transaction.
    */
   const vehicleSaleIncome =
-    getVehicleRecords()
+    (await getVehicleRecords())
       .map(
         vehicleSaleIncomeTransaction
       )

@@ -1,5 +1,7 @@
 1. Project Purpose
 
+Update (backend added): A real backend now exists at /backend (Express + SQLite via node:sqlite, see backend/README.md). Customers, vehicles and their seize/release/sale lifecycle, loans, repayment schedules, collections and login are now stored in a SQLite database and served over a REST API; loan figures and the payment-allocation waterfall are computed server-side, and login checks scrypt-hashed passwords instead of the hardcoded DEMO_USERS array. src/services/customerStorage.js, vehicleStorage.js, collectionStorage.js and authStorage.js call the API via src/services/api.js — their read functions are now async, so callers must await them. Expenses, investors, re-loan rules and the ledger view still use localStorage. The rest of this document describes the original frontend-only design: read it for the data shape and business rules, but treat "localStorage" references for the areas listed above as historical.
+
 This project is a frontend-first Auto Finance / Loan Management application built with React, Vite, Tailwind CSS and React Router. The customer module is the root business entity. Customer onboarding collects customer, KYC, vehicle/RC, optional guarantor and loan information. The completed record is persisted locally for the frontend prototype and reused by the Customers and Loan Management modules.
 
 2. High-Level Business Flow

@@ -57,16 +57,12 @@ const Repayment = () => {
      STATE
   ======================================================= */
 
-  const [loans, setLoans] = useState(() =>
-    safeGetLoans()
-  );
+  const [loans, setLoans] = useState([]);
 
   const [
     collections,
     setCollections,
-  ] = useState(() =>
-    safeGetCollections()
-  );
+  ] = useState([]);
 
   const [
     search,
@@ -132,14 +128,15 @@ const Repayment = () => {
   ======================================================= */
 
   useEffect(() => {
-    const reload = () => {
-      setLoans(
-        safeGetLoans()
-      );
+    const reload = async () => {
+      const [loadedLoans, loadedCollections] =
+        await Promise.all([
+          safeGetLoans(),
+          safeGetCollections(),
+        ]);
 
-      setCollections(
-        safeGetCollections()
-      );
+      setLoans(loadedLoans);
+      setCollections(loadedCollections);
     };
 
     reload();
@@ -492,7 +489,7 @@ const Repayment = () => {
      SUBMIT
   ======================================================= */
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
     setMessage("");
@@ -538,7 +535,7 @@ const Repayment = () => {
      * creating the collection.
      */
     const latestLoans =
-      safeGetLoans();
+      await safeGetLoans();
 
     const latestLoan =
       latestLoans.find(
@@ -715,7 +712,7 @@ const Repayment = () => {
 
     try {
       newCollection =
-        addCollection({
+        await addCollection({
           customerId:
             latestLoan?.customerId ||
             latestLoan?.customer?.id ||
@@ -938,11 +935,11 @@ const Repayment = () => {
     );
 
     setCollections(
-      safeGetCollections()
+      await safeGetCollections()
     );
 
     setLoans(
-      safeGetLoans()
+      await safeGetLoans()
     );
 
     setSelectedLoan(
@@ -3267,10 +3264,10 @@ const safeGetSession = () => {
    SAFE STORAGE
 ========================================================= */
 
-const safeGetLoans = () => {
+const safeGetLoans = async () => {
   try {
     const result =
-      getLoans();
+      await getLoans();
 
     return Array.isArray(
       result
@@ -3287,10 +3284,10 @@ const safeGetLoans = () => {
   }
 };
 
-const safeGetCollections = () => {
+const safeGetCollections = async () => {
   try {
     const result =
-      getCollections();
+      await getCollections();
 
     return Array.isArray(
       result

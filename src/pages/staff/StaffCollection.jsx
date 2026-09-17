@@ -408,10 +408,10 @@ const formatDisplayDateTime = (
    SAFE STORAGE
 ========================================================= */
 
-const safeGetLoans = () => {
+const safeGetLoans = async () => {
   try {
     const result =
-      getLoans();
+      await getLoans();
 
     return Array.isArray(
       result
@@ -428,10 +428,10 @@ const safeGetLoans = () => {
   }
 };
 
-const safeGetCollections = () => {
+const safeGetCollections = async () => {
   try {
     const result =
-      getCollections();
+      await getCollections();
 
     return Array.isArray(
       result
@@ -463,18 +463,12 @@ const StaffCollection = () => {
   const [
     loans,
     setLoans,
-  ] = useState(
-    () =>
-      safeGetLoans()
-  );
+  ] = useState([]);
 
   const [
     collections,
     setCollections,
-  ] = useState(
-    () =>
-      safeGetCollections()
-  );
+  ] = useState([]);
 
   const [
     search,
@@ -539,14 +533,15 @@ const StaffCollection = () => {
 
   useEffect(() => {
     const reloadData =
-      () => {
-        setLoans(
-          safeGetLoans()
-        );
+      async () => {
+        const [loadedLoans, loadedCollections] =
+          await Promise.all([
+            safeGetLoans(),
+            safeGetCollections(),
+          ]);
 
-        setCollections(
-          safeGetCollections()
-        );
+        setLoans(loadedLoans);
+        setCollections(loadedCollections);
       };
 
     reloadData();
@@ -2469,7 +2464,7 @@ const StaffCollection = () => {
   ====================================================== */
 
   const handleSubmit =
-    (
+    async (
       event
     ) => {
       event.preventDefault();
@@ -2507,7 +2502,7 @@ const StaffCollection = () => {
       }
 
       const latestLoans =
-        safeGetLoans();
+        await safeGetLoans();
 
       const latestLoan =
         latestLoans.find(
@@ -2698,7 +2693,7 @@ const StaffCollection = () => {
 
       try {
         newCollection =
-          addCollection({
+          await addCollection({
             customerId:
               getCustomerId(
                 latestLoan
@@ -2954,11 +2949,11 @@ const StaffCollection = () => {
       );
 
       setCollections(
-        safeGetCollections()
+        await safeGetCollections()
       );
 
       setLoans(
-        safeGetLoans()
+        await safeGetLoans()
       );
 
       setSelectedPayment(

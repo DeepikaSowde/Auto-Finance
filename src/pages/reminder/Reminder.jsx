@@ -263,10 +263,10 @@ const formatDate = (
    SAFE STORAGE
 ========================================================= */
 
-const safeGetLoans = () => {
+const safeGetLoans = async () => {
   try {
     const result =
-      getLoans();
+      await getLoans();
 
     return Array.isArray(
       result
@@ -701,10 +701,7 @@ const Reminder = () => {
   const [
     loans,
     setLoans,
-  ] = useState(
-    () =>
-      safeGetLoans()
-  );
+  ] = useState([]);
 
   const [
     reminders,
@@ -760,9 +757,9 @@ const Reminder = () => {
   ====================================================== */
 
   useEffect(() => {
-    const reload = () => {
+    const reload = async () => {
       setLoans(
-        safeGetLoans()
+        await safeGetLoans()
       );
 
       setReminders(

@@ -28,7 +28,21 @@ const ReLoan = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const loanId = new URLSearchParams(location.search).get("loanId") || "";
-  const customerRecords = useMemo(() => getCustomers(), []);
+  const [customerRecords, setCustomerRecords] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getCustomers().then((records) => {
+      if (!cancelled) {
+        setCustomerRecords(records);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [search, setSearch] = useState("");
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [checking, setChecking] = useState(false);
@@ -89,10 +103,17 @@ const ReLoan = () => {
       return;
     }
 
-    const match = findCustomerAndLoan(loanId);
-    if (match) {
-      setSelectedRecord(match);
-    }
+    let cancelled = false;
+
+    findCustomerAndLoan(loanId).then((match) => {
+      if (!cancelled && match) {
+        setSelectedRecord(match);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [loanId]);
 
   useEffect(() => {

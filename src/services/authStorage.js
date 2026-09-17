@@ -1,81 +1,70 @@
 // src/services/authStorage.js
+//
+// Authentication now happens server-side against the users table
+// (scrypt-hashed passwords) instead of the hardcoded DEMO_USERS array.
+//
+// login() is async because it makes a network call. getSession() stays
+// synchronous on purpose: ProtectedRoute and several pages read it during
+// render, so the session snapshot is mirrored into sessionStorage and the
+// bearer token in api.js authorises the actual API calls.
 
-import { DEMO_USERS } from "../data/demoUser";
+import { apiPost, setToken } from "./api";
 
-const SESSION_KEY =
-  "auto_finance_session";
+const SESSION_KEY = "auto_finance_session";
 
-export const login = (
-  username,
-  password
-) => {
-  const cleanUsername =
-    String(username || "").trim();
+const storeSession = (session) => {
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  } catch (error) {
+    console.error("Failed to persist login session:", error);
+  }
+};
 
-  const user =
-    DEMO_USERS.find(
-      (item) =>
-        item.username ===
-          cleanUsername &&
-        item.password === password
-    );
+export const login = async (username, password) => {
+  try {
+    const result = await apiPost("/auth/login", { username, password });
 
-  if (!user) {
+    setToken(result.token);
+    storeSession(result.user);
+
+    return { success: true, user: result.user };
+  } catch (error) {
     return {
       success: false,
       message:
-        "Invalid username or password.",
+        error?.status === 401
+          ? "Invalid username or password."
+          : error?.message || "Unable to reach the server. Is the API running?",
     };
   }
-
-  const session = {
-    userId: user.id,
-    username: user.username,
-    name: user.name,
-    role: user.role,
-    loginAt:
-      new Date().toISOString(),
-  };
-
-  sessionStorage.setItem(
-    SESSION_KEY,
-    JSON.stringify(session)
-  );
-
-  return {
-    success: true,
-    user: session,
-  };
 };
 
 export const getSession = () => {
   try {
-    const stored =
-      sessionStorage.getItem(
-        SESSION_KEY
-      );
+    const stored = sessionStorage.getItem(SESSION_KEY);
 
-    if (!stored) {
-      return null;
-    }
-
-    return JSON.parse(stored);
+    return stored ? JSON.parse(stored) : null;
   } catch (error) {
-    console.error(
-      "Failed to read login session:",
-      error
-    );
+    console.error("Failed to read login session:", error);
 
     return null;
   }
 };
 
-export const logout = () => {
-  sessionStorage.removeItem(
-    SESSION_KEY
-  );
+export const logout = async () => {
+  try {
+    await apiPost("/auth/logout");
+  } catch {
+    // Even if the server call fails the local session must still clear.
+  }
+
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    // ignore
+  }
+
+  setToken("");
 };
 
-export const isLoggedIn = () => {
-  return Boolean(getSession());
-};
+export const isLoggedIn = () => Boolean(getSession());

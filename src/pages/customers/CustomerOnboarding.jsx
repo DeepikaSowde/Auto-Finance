@@ -1,6 +1,6 @@
 // src/pages/customers/CustomerOnboarding.jsx
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   useLocation,
   useNavigate,
@@ -29,10 +29,8 @@ import RepaymentScheduleModal from "../../components/loans/RepaymentScheduleModa
 import { generateRepaymentSchedule } from "../../services/repaymentSchedule";
 import {
   saveCustomer,
-  saveCustomers,
-  getCustomers,
+  deleteCustomer,
   appendLoanToCustomer,
-  generateVehicleId,
   getCustomerById,
   getVehicles,
 } from "../../services/customerStorage";
@@ -129,35 +127,6 @@ const [createdLoan, setCreatedLoan] =
   const [formData, setFormData] = useState(() => {
     const customer = createEmptyCustomer();
 
-    if (reLoanParams.isReLoan) {
-      const existing = getCustomerById(
-        reLoanParams.customerId
-      );
-      const previous = findCustomerAndLoan(
-        reLoanParams.previousLoanId
-      );
-
-      if (existing && previous) {
-        const next = {
-          ...customer,
-          ...existing,
-          loan: {
-            ...customer.loan,
-            ...createReLoanContext({
-              customer: existing,
-              loan: previous.loan,
-            }),
-          },
-          reLoanContext: createReLoanContext({
-            customer: existing,
-            loan: previous.loan,
-          }),
-        };
-
-        return next;
-      }
-    }
-
     const today = new Date()
       .toISOString()
       .split("T")[0];
@@ -166,6 +135,57 @@ const [createdLoan, setCreatedLoan] =
 
     return customer;
   });
+
+  /*
+   * Re-loan prefill. The existing customer now comes from the API, so it
+   * is loaded after mount rather than in the state initialiser.
+   */
+  useEffect(() => {
+    if (!reLoanParams.isReLoan) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const prefillFromExistingCustomer = async () => {
+      const existing = await getCustomerById(
+        reLoanParams.customerId
+      );
+
+      const previous = await findCustomerAndLoan(
+        reLoanParams.previousLoanId
+      );
+
+      if (cancelled || !existing || !previous) {
+        return;
+      }
+
+      const reLoanContext = createReLoanContext({
+        customer: existing,
+        loan: previous.loan,
+      });
+
+      setFormData((current) => ({
+        ...current,
+        ...existing,
+        loan: {
+          ...current.loan,
+          ...reLoanContext,
+        },
+        reLoanContext,
+      }));
+    };
+
+    prefillFromExistingCustomer();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    reLoanParams.customerId,
+    reLoanParams.isReLoan,
+    reLoanParams.previousLoanId,
+  ]);
 
   const [stepValidity, setStepValidity] = useState({
     1: true,
@@ -416,14 +436,12 @@ const updateVehicleData = useCallback(
       const incomingVehicle =
         data?.vehicle || {};
 
-      const existingVehicleId =
+      // New vehicles get their id from the server on save; an existing
+      // one (re-loan against the same vehicle) keeps the id it has.
+      const vehicleId =
         previous?.vehicle?.vehicleId ||
         previous?.vehicle?.id ||
         "";
-
-      const vehicleId =
-        existingVehicleId ||
-        generateVehicleId();
 
       return {
         ...previous,
@@ -496,45 +514,26 @@ const updateVehicleData = useCallback(
    * --------------------------------------------------------
    * CREATE CUSTOMER
    *
-   * ONLY HERE:
-   * - IDs generated
-   * - repayment schedule generated
-   * - status activated
-   * - saved to localStorage
+   * The API assigns identifiers, recalculates the loan and
+   * generates the repayment schedule, so this only validates
+   * funding and submits the captured form data.
    * --------------------------------------------------------
    */
 
-  const handleCreateCustomer = useCallback(() => {
-    let customerPersisted = false;
-    const customerSnapshot = getCustomers();
+  const handleCreateCustomer = useCallback(async () => {
+    let createdCustomerId = "";
 
     try {
-      const now =
-        new Date().toISOString();
+      const now = new Date().toISOString();
 
-      const timestamp =
-        Date.now();
+      const loan = formData.loan || {};
 
-      const customerId =
-        reLoanParams.isReLoan
-          ? reLoanParams.customerId
-          : `CUS-${timestamp}`;
-
-      const loanId =
-        `LOAN-${timestamp}`;
-
-      const customerNumber =
-        `CUST-${String(timestamp).slice(-6)}`;
-
-      const loanNumber =
-        `LN-${String(timestamp).slice(-6)}`;
-
-      const loan =
-        formData.loan || {};
       const loanAmount = Number(
         loan.loanAmount || 0
       );
-      const fundingSummary = getInvestmentPoolSummary();
+
+      const fundingSummary =
+        getInvestmentPoolSummary();
 
       if (
         !Number.isFinite(loanAmount) ||
@@ -556,162 +555,65 @@ const updateVehicleData = useCallback(
 
       const fundingTransactionId =
         getNextInvestorTransactionId();
-           const vehicleId =
-  reLoanParams.isReLoan
-    ? (
-        formData.vehicle?.vehicleId ||
-        formData.vehicle?.id ||
-        generateVehicleId()
-      )
-    : generateVehicleId();
 
-      const repaymentSchedule =
-        generateRepaymentSchedule({
-          principal: Number(
-            loan.loanAmount || 0
-          ),
+      /*
+       * The API assigns the customer, vehicle and loan identifiers and
+       * builds the repayment schedule from the loan terms, so only the
+       * captured form data is sent.
+       */
+      const payload = {
+        ...formData,
 
-          rate: Number(
-            loan.interest?.rate || 0
-          ),
+        customer: {
+          ...formData.customer,
+          status: "Active",
+        },
 
-          tenure: Number(
-            loan.repayment?.tenure || 0
-          ),
+        loan: {
+          ...loan,
 
-          tenureUnit:
-            loan.repayment?.tenureUnit ||
-            "Months",
+          funding: {
+            source: "investment-pool",
+            fundedAmount: loanAmount,
+            allocationDate: now,
+            fundingTransactionId,
+          },
 
-          interestType:
-            loan.interest?.type ||
-            "Flat",
+          ...(reLoanParams.isReLoan
+            ? {
+                previousLoanId:
+                  loan?.previousLoanId ||
+                  reLoanParams.previousLoanId,
+                previousLoanNumber:
+                  loan?.previousLoanNumber ||
+                  (await findCustomerAndLoan(
+                    reLoanParams.previousLoanId
+                  ))?.loan?.loanNumber ||
+                  "",
+                collateralVehicleMode:
+                  loan?.collateralVehicleMode ||
+                  "same",
+              }
+            : {}),
 
-          repaymentMethod:
-            loan.repayment?.method ||
-            "EMI",
+          status: "Active",
+        },
+      };
 
-          frequency:
-            loan.repayment?.frequency ||
-            "Monthly",
-
-          firstDueDate:
-            loan.firstDueDate || "",
-        });
-
-    const finalCustomer = {
-  ...formData,
-
-  customer: {
-    ...formData.customer,
-
-    id: customerId,
-
-    customerNumber,
-
-    createdAt:
-      formData.customer?.createdAt ||
-      now,
-
-    updatedAt: now,
-
-    status: "Active",
-  },
-
-  vehicle: {
-    ...formData.vehicle,
-
-    id:
-      formData.vehicle?.id ||
-      formData.vehicle?.vehicleId ||
-      vehicleId,
-
-    vehicleId:
-      formData.vehicle?.vehicleId ||
-      formData.vehicle?.id ||
-      vehicleId,
-  },
-
-  loan: {
-    ...loan,
-
-    funding: {
-      source: "investment-pool",
-      fundedAmount: loanAmount,
-      allocationDate: now,
-      fundingTransactionId,
-    },
-
-    id: loanId,
-
-    ...(reLoanParams.isReLoan
-      ? {
-          previousLoanId:
-            loan?.previousLoanId ||
-            reLoanParams.previousLoanId,
-          previousLoanNumber:
-            loan?.previousLoanNumber ||
-            findCustomerAndLoan(
-              reLoanParams.previousLoanId
-            )?.loan?.loanNumber ||
-            "",
-          previousLoanReference:
-            loan?.previousLoanReference ||
-            reLoanParams.previousLoanId,
-          previousVehicleId:
-            loan?.previousVehicleId ||
-            findCustomerAndLoan(
-              reLoanParams.previousLoanId
-            )?.loan?.vehicleId ||
-            "",
-          collateralVehicleMode:
-            loan?.collateralVehicleMode ||
-            "same",
-        }
-      : {}),
-
-    loanNumber,
-
-    vehicleId:
-      formData.vehicle?.id ||
-      formData.vehicle?.vehicleId ||
-      vehicleId,
-
-    vehicle: {
-      ...loan?.vehicle,
-
-      id:
-        formData.vehicle?.id ||
-        formData.vehicle?.vehicleId ||
-        vehicleId,
-
-      vehicleId:
-        formData.vehicle?.vehicleId ||
-        formData.vehicle?.id ||
-        vehicleId,
-    },
-
-    repaymentSchedule,
-
-    status: "Active",
-
-      createdAt: now,
-      updatedAt: now,
-  },
-};
+      let savedRecord;
 
       if (reLoanParams.isReLoan) {
-        const eligibility = checkReLoanEligibility({
-          customer: getCustomerById(
-            customerId
-          ),
-          loan: findCustomerAndLoan(
-            reLoanParams.previousLoanId
-          )?.loan,
-          vehicle:
-            formData.vehicle,
-          rules: getReLoanRules(),
-        });
+        const eligibility =
+          checkReLoanEligibility({
+            customer: await getCustomerById(
+              reLoanParams.customerId
+            ),
+            loan: (await findCustomerAndLoan(
+              reLoanParams.previousLoanId
+            ))?.loan,
+            vehicle: formData.vehicle,
+            rules: getReLoanRules(),
+          });
 
         if (!eligibility.eligible) {
           throw new Error(
@@ -719,35 +621,48 @@ const updateVehicleData = useCallback(
           );
         }
 
-        appendLoanToCustomer(
-          customerId,
-          finalCustomer.loan
+        savedRecord = await appendLoanToCustomer(
+          reLoanParams.customerId,
+          payload.loan
         );
-        customerPersisted = true;
       } else {
-        saveCustomer(
-          finalCustomer
-        );
-        customerPersisted = true;
+        savedRecord = await saveCustomer(payload);
+        createdCustomerId =
+          savedRecord?.customer?.id || "";
       }
+
+      /*
+       * The newest loan on the returned record is the one just created.
+       */
+      const savedLoan = reLoanParams.isReLoan
+        ? (savedRecord?.loans || []).at(-1) ||
+          savedRecord?.loan
+        : savedRecord?.loan;
 
       allocateInvestmentPoolToLoan({
         amount: loanAmount,
-        loanId: finalCustomer.loan.id,
-        loanNumber: finalCustomer.loan.loanNumber,
+        loanId: savedLoan?.id,
+        loanNumber: savedLoan?.loanNumber,
         date: now,
         transactionId: fundingTransactionId,
       });
 
-      console.log(
-        "Customer created successfully:",
-        finalCustomer
-      );
-
       navigate("/customers");
     } catch (error) {
-      if (customerPersisted) {
-        saveCustomers(customerSnapshot);
+      /*
+       * Investor allocation still lives in the browser, so if it fails
+       * after the customer was created the new record is removed again
+       * rather than leaving a loan with no funding behind it.
+       */
+      if (createdCustomerId) {
+        try {
+          await deleteCustomer(createdCustomerId);
+        } catch (rollbackError) {
+          console.error(
+            "Failed to roll back the created customer:",
+            rollbackError
+          );
+        }
       }
 
       console.error(
@@ -887,10 +802,22 @@ case 6:
   const canContinue =
     stepValidity[currentStep] === true;
 
-  const collateralVehicles = useMemo(
-    () => getVehicles(),
-    []
-  );
+  const [collateralVehicles, setCollateralVehicles] =
+    useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getVehicles().then((vehicles) => {
+      if (!cancelled) {
+        setCollateralVehicles(vehicles);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div
@@ -1013,9 +940,9 @@ case 6:
                 Collateral Vehicle
                 <select
                   value={formData.loan?.collateralVehicleMode || "same"}
-                  onChange={(event) => {
+                  onChange={async (event) => {
                     const mode = event.target.value;
-                    const previous = findCustomerAndLoan(reLoanParams.previousLoanId);
+                    const previous = await findCustomerAndLoan(reLoanParams.previousLoanId);
                     const selected = mode === "same"
                       ? previous?.vehicle || formData.vehicle
                       : formData.vehicle;

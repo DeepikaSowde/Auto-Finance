@@ -56,6 +56,9 @@ const SoldVehicles = () => {
   const [loans, setLoans] =
     useState([]);
 
+  const [customers, setCustomers] =
+    useState([]);
+
   const [search, setSearch] =
     useState("");
 
@@ -89,13 +92,20 @@ const SoldVehicles = () => {
      LOAD
   ======================================================= */
 
-  const loadData = () => {
+  const loadData = async () => {
     try {
-  const vehicleRecords =
-  getVehicleRecords();
+      const [vehicleRecords, storedLoans, storedCustomers] =
+        await Promise.all([
+          getVehicleRecords(),
+          getLoans(),
+          getCustomers(),
+        ]);
 
-      const storedLoans =
-        getLoans();
+      setCustomers(
+        Array.isArray(storedCustomers)
+          ? storedCustomers
+          : []
+      );
 
       setRecords(
         Array.isArray(vehicleRecords)
@@ -224,15 +234,6 @@ const SoldVehicles = () => {
       record?.customerId || "";
 
     if (!customerId) {
-      return null;
-    }
-
-    const customers =
-      getCustomers();
-
-    if (
-      !Array.isArray(customers)
-    ) {
       return null;
     }
 
@@ -797,13 +798,13 @@ const SoldVehicles = () => {
      COMPLETE SALE
   ======================================================= */
 
-const handleCompleteSale = (
+const handleCompleteSale = async (
   vehicleId,
   saleData
 ) => {
   try {
     const result =
-      completeVehicleSale(
+      await completeVehicleSale(
         vehicleId,
         saleData
       );

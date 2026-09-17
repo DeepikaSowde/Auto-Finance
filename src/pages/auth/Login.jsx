@@ -55,7 +55,7 @@ const Login = () => {
      EXISTING LOGIN LOGIC
   ========================================================= */
 
-  const handleSubmit = (
+  const handleSubmit = async (
     event
   ) => {
     event.preventDefault();
@@ -64,7 +64,7 @@ const Login = () => {
     setLoading(true);
 
     const result =
-      login(
+      await login(
         username,
         password
       );

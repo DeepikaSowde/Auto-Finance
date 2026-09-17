@@ -273,10 +273,10 @@ const [showActivityHistory, setShowActivityHistory] =
      LOAD CUSTOMERS
   ====================================================== */
 
-  const loadCustomers = () => {
+  const loadCustomers = async () => {
     try {
       const storedCustomers =
-        getCustomers();
+        await getCustomers();
 
       setCustomers(
         Array.isArray(

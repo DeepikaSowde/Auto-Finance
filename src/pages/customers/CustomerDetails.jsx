@@ -78,9 +78,9 @@ const [showActivityHistory, setShowActivityHistory] =
   ====================================================== */
 
   useEffect(() => {
-    const loadCustomer = () => {
+    const loadCustomer = async () => {
       const data =
-        getCustomerById(
+        await getCustomerById(
           customerId
         );
 

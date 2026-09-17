@@ -62,19 +62,20 @@ const useDashboardData = () => {
   ======================================================== */
 
   const loadDashboardData =
-    useCallback(() => {
+    useCallback(async () => {
       try {
-        const storedCustomers =
-          getCustomers();
-
-        const storedLoans =
-          getLoans();
+        const [
+          storedCustomers,
+          storedLoans,
+          storedCollections,
+        ] = await Promise.all([
+          getCustomers(),
+          getLoans(),
+          getCollections(),
+        ]);
 
         const storedExpenses =
           getExpenses();
-
-        const storedCollections =
-          getCollections();
 
         setCustomers(
           Array.isArray(

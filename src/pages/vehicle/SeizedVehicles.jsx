@@ -78,19 +78,32 @@ const SeizedVehicles = () => {
   const [sellTarget, setSellTarget] =
     useState(null);
 
+  const [customers, setCustomers] =
+    useState([]);
+
   const rowsPerPage = 7;
 
   /* =======================================================
      LOAD
   ======================================================= */
 
-  const loadData = () => {
+  const loadData = async () => {
     try {
-      const storedSeizures =
-        getVehicleSeizures();
+      const [
+        storedSeizures,
+        storedLoans,
+        storedCustomers,
+      ] = await Promise.all([
+        getVehicleSeizures(),
+        getLoans(),
+        getCustomers(),
+      ]);
 
-      const storedLoans =
-        getLoans();
+      setCustomers(
+        Array.isArray(storedCustomers)
+          ? storedCustomers
+          : []
+      );
 
       setSeizures(
         Array.isArray(storedSeizures)
@@ -192,9 +205,6 @@ const SeizedVehicles = () => {
   const findCustomerForSeizure = (seizure) => {
     const customerId =
       seizure?.customerId || "";
-
-    const customers =
-      getCustomers();
 
     return (
       customers.find(
@@ -673,7 +683,7 @@ const SeizedVehicles = () => {
      RELEASE
   ======================================================= */
 
-  const confirmRelease = () => {
+  const confirmRelease = async () => {
     if (!releaseTarget) {
       return;
     }
@@ -693,7 +703,7 @@ const SeizedVehicles = () => {
 
     try {
       const result =
-        releaseVehicleSeizure(
+        await releaseVehicleSeizure(
           recordId,
           "Admin",
           "Vehicle released from seizure module."
@@ -759,14 +769,14 @@ const SeizedVehicles = () => {
      MOVE TO PENDING SALE
   ======================================================= */
 
-  const confirmPendingSale = () => {
+  const confirmPendingSale = async () => {
     if (!sellTarget) {
       return;
     }
 
     try {
       const seizure =
-        getVehicleSeizureByVehicleId(
+        await getVehicleSeizureByVehicleId(
           sellTarget?.vehicleId,
           sellTarget?.loanId,
           sellTarget?.loanNumber
@@ -795,7 +805,7 @@ const SeizedVehicles = () => {
       }
 
       const updated =
-        markVehicleForSale(
+        await markVehicleForSale(
           seizure.id,
           {
             vehicleId:

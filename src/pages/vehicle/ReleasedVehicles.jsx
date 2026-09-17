@@ -69,16 +69,28 @@ const ReleasedVehicles = () => {
   const [selectedPaymentDetails, setSelectedPaymentDetails] =
     useState(null);
 
+  const [customers, setCustomers] = useState([]);
+
   const rowsPerPage = 7;
 
   /* =======================================================
      LOAD
   ======================================================= */
 
-  const loadData = () => {
+  const loadData = async () => {
     try {
-      const storedSeizures = getVehicleSeizures();
-      const storedLoans = getLoans();
+      const [storedSeizures, storedLoans, storedCustomers] =
+        await Promise.all([
+          getVehicleSeizures(),
+          getLoans(),
+          getCustomers(),
+        ]);
+
+      setCustomers(
+        Array.isArray(storedCustomers)
+          ? storedCustomers
+          : []
+      );
 
       setSeizures(
         Array.isArray(storedSeizures)
@@ -193,12 +205,6 @@ const ReleasedVehicles = () => {
       release?.customerId || "";
 
     if (!customerId) {
-      return null;
-    }
-
-    const customers = getCustomers();
-
-    if (!Array.isArray(customers)) {
       return null;
     }
 

@@ -1,3 +1,30 @@
+# Auto Finance / Loan Management
+
+Frontend: React + Vite. Backend: Express + SQLite (see [backend/README.md](backend/README.md)).
+
+## Running locally
+
+```bash
+# Terminal 1 — API + database
+cd backend
+npm install
+npm run dev
+
+# Terminal 2 — frontend
+npm install
+npm run dev
+```
+
+The frontend expects the API at `http://localhost:4000/api` by default;
+override with `VITE_API_BASE_URL` (see `.env.example`).
+
+Log in with `admin` / `admin123` (admin) or `staff` / `staff123` (staff).
+
+Customers, vehicles, loans, repayment schedules, collections and login are
+served by the API and stored in SQLite. Expenses, investors, re-loan rules and
+the ledger view still use browser storage for now.
+
+
 # React + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

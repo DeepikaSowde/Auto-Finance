@@ -31,7 +31,7 @@ import {
 
 import {
   addVehicleSeizure,
-  getVehicleById,
+  getVehicleRecords,
 } from "../../services/vehicleStorage";
 
 /* =========================================================
@@ -41,9 +41,9 @@ import {
 const Vehicle = () => {
   const navigate = useNavigate();
 
-  const [customers, setCustomers] = useState(() =>
-    safeGetCustomers()
-  );
+  const [customers, setCustomers] = useState([]);
+
+  const [vehicleRecords, setVehicleRecords] = useState([]);
 
   const [search, setSearch] = useState("");
 
@@ -73,8 +73,15 @@ const Vehicle = () => {
   ======================================================= */
 
   useEffect(() => {
-    const reload = () => {
-      setCustomers(safeGetCustomers());
+    const reload = async () => {
+      const [loadedCustomers, loadedVehicles] =
+        await Promise.all([
+          safeGetCustomers(),
+          safeGetVehicles(),
+        ]);
+
+      setCustomers(loadedCustomers);
+      setVehicleRecords(loadedVehicles);
     };
 
     reload();
@@ -196,6 +203,7 @@ const Vehicle = () => {
           vehicleId,
           vehicleStatus:
             vehicle?.status || "",
+          vehicleRecords,
         });
 
       const vehicleRecord = {
@@ -314,7 +322,7 @@ const Vehicle = () => {
         ...vehicle
       }) => vehicle
     );
-  }, [customers]);
+  }, [customers, vehicleRecords]);
 
   /* =======================================================
      FILTER OPTIONS
@@ -557,16 +565,18 @@ const Vehicle = () => {
      SEIZE COMPLETE
   ======================================================= */
 
-  const handleSeizeComplete = () => {
+  const handleSeizeComplete = async () => {
     setSeizeVehicle(null);
     setOpenActionVehicleKey(null);
 
-    const updatedCustomers =
-      safeGetCustomers();
+    const [updatedCustomers, updatedVehicles] =
+      await Promise.all([
+        safeGetCustomers(),
+        safeGetVehicles(),
+      ]);
 
-    setCustomers(
-      updatedCustomers
-    );
+    setCustomers(updatedCustomers);
+    setVehicleRecords(updatedVehicles);
 
     window.dispatchEvent(
       new CustomEvent(
@@ -2571,7 +2581,7 @@ const SeizureForm = ({
     setError,
   ] = useState("");
 
-  const handleSubmit = (
+  const handleSubmit = async (
     event
   ) => {
     event.preventDefault();
@@ -2590,7 +2600,7 @@ const SeizureForm = ({
       setSaving(true);
 
       const seizure =
-        addVehicleSeizure({
+        await addVehicleSeizure({
           vehicleId:
             vehicle?.vehicleId ||
             "",
@@ -3145,10 +3155,25 @@ const SeizureField = ({
    HELPERS
 ========================================================= */
 
-const safeGetCustomers = () => {
+const safeGetVehicles = async () => {
+  try {
+    const result = await getVehicleRecords();
+
+    return Array.isArray(result) ? result : [];
+  } catch (error) {
+    console.error(
+      "Failed to load vehicle lifecycle records:",
+      error
+    );
+
+    return [];
+  }
+};
+
+const safeGetCustomers = async () => {
   try {
     const result =
-      getCustomers();
+      await getCustomers();
 
     return Array.isArray(result)
       ? result
@@ -3170,12 +3195,15 @@ const safeGetCustomers = () => {
 const getLifecycleFromStorage = ({
   vehicleId,
   vehicleStatus,
+  vehicleRecords = [],
 }) => {
   try {
-    const vehicle =
-      getVehicleById(
-        vehicleId
-      );
+    const vehicle = vehicleRecords.find(
+      (record) =>
+        String(
+          record?.vehicleId || record?.id || ""
+        ) === String(vehicleId || "")
+    );
 
     if (vehicle) {
       return {

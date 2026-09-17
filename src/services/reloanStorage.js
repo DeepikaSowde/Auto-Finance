@@ -288,8 +288,8 @@ export const getCustomerLoans = (customerRecord) => {
   });
 };
 
-export const getCustomerReLoans = (customerId) => {
-  const customer = getCustomerById(customerId);
+export const getCustomerReLoans = async (customerId) => {
+  const customer = await getCustomerById(customerId);
   return getCustomerLoans(customer).filter(
     (loan) =>
       Boolean(
@@ -548,8 +548,8 @@ export const createReLoanContext = ({ customer, loan, vehicleId } = {}) => ({
   collateralVehicleMode: "same",
 });
 
-export const findCustomerAndLoan = (loanId) => {
-  const customers = getCustomers();
+export const findCustomerAndLoan = async (loanId) => {
+  const customers = await getCustomers();
   for (const customer of customers) {
     const loans = getCustomerLoans(customer);
     const loan = loans.find(

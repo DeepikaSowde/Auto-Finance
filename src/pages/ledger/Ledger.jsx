@@ -15,7 +15,7 @@ const initialFilters = { type: "all", paymentMode: "all", incomeCategory: "all",
 const money = formatLedgerMoney;
 
 const Ledger = () => {
-  const [transactions, setTransactions] = useState(() => getLedgerTransactions());
+  const [transactions, setTransactions] = useState([]);
   const [period, setPeriod] = useState("this-month");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -32,7 +32,11 @@ const Ledger = () => {
   const pageSize = 10;
 
   useEffect(() => {
-    const reload = () => setTransactions(getLedgerTransactions());
+    const reload = async () =>
+      setTransactions(await getLedgerTransactions());
+
+    reload();
+
     window.addEventListener("auto-finance:data-updated", reload);
     window.addEventListener("fleetopz:data-updated", reload);
     window.addEventListener("storage", reload);

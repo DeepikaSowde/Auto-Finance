@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
@@ -21,7 +21,21 @@ const money = (value) =>
 const ReLoanEligibility = () => {
   const navigate = useNavigate();
   const { loanId } = useParams();
-  const match = findCustomerAndLoan(loanId);
+  const [match, setMatch] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    findCustomerAndLoan(loanId).then((found) => {
+      if (!cancelled) {
+        setMatch(found);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loanId]);
   const result = useMemo(
     () => {
       if (!match) {
@@ -67,8 +81,8 @@ const ReLoanEligibility = () => {
       : "border-red-200 bg-red-50 text-red-700";
   const summary = result.financialSummary;
 
-  const startReLoan = () => {
-    const fresh = findCustomerAndLoan(loanId);
+  const startReLoan = async () => {
+    const fresh = await findCustomerAndLoan(loanId);
     const freshResult = fresh
       ? checkReLoanEligibility({
           customer: fresh.customer,

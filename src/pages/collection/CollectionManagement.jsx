@@ -31,11 +31,9 @@ import {
   COLLECTION_STATUS,
   getCollectionHistory,
   getCollectionHistorySummary,
-  getMonthlyCollectionSummary,
 } from "../../services/collectionStorage";
 
 import {
-  getSession,
   logout,
 } from "../../services/authStorage";
 
@@ -46,6 +44,23 @@ import {
 /* =========================================================
    MAIN
 ========================================================= */
+
+const EMPTY_HISTORY_SUMMARY = {
+  startDate: "",
+  endDate: "",
+  recordCount: 0,
+  totalRecords: 0,
+  totalAmount: 0,
+  approvedCount: 0,
+  approvedAmount: 0,
+  pendingCount: 0,
+  pendingAmount: 0,
+  rejectedCount: 0,
+  rejectedAmount: 0,
+  totalDue: 0,
+  totalPenalty: 0,
+  byCustomer: [],
+};
 
 const CollectionManagement = () => {
   const navigate =
@@ -58,9 +73,7 @@ const CollectionManagement = () => {
   const [
     collections,
     setCollections,
-  ] = useState(
-    () => safeGetCollections()
-  );
+  ] = useState([]);
 
   const [
     search,
@@ -126,9 +139,9 @@ const CollectionManagement = () => {
   ======================================================= */
 
   useEffect(() => {
-    const reload = () => {
+    const reload = async () => {
       setCollections(
-        safeGetCollections()
+        await safeGetCollections()
       );
     };
 
@@ -349,20 +362,17 @@ const CollectionManagement = () => {
     setActionError("");
 
     try {
-      const session =
-        getSession();
-
       const result =
-        approveCollection(
-          collection.id,
-          session
+        await approveCollection(
+          collection.id
         );
 
       if (
-        !result
+        !result?.success
       ) {
         throw new Error(
-          "Unable to approve this collection."
+          result?.message ||
+            "Unable to approve this collection."
         );
       }
 
@@ -371,11 +381,11 @@ const CollectionManagement = () => {
        */
       if (
         normalize(
-          result?.repaymentProcessingStatus
+          result?.collection?.repaymentProcessingStatus
         ) === "failed"
       ) {
         throw new Error(
-          result?.repaymentError ||
+          result?.collection?.repaymentError ||
             "Repayment processing failed."
         );
       }
@@ -384,7 +394,7 @@ const CollectionManagement = () => {
        * Refresh storage.
        */
       const latest =
-        safeGetCollections();
+        await safeGetCollections();
 
       setCollections(
         latest
@@ -423,7 +433,7 @@ const CollectionManagement = () => {
       );
 
       setCollections(
-        safeGetCollections()
+        await safeGetCollections()
       );
     } finally {
       setProcessing(false);
@@ -448,18 +458,14 @@ const CollectionManagement = () => {
     setActionError("");
 
     try {
-      const session =
-        getSession();
-
       const result =
-        rejectCollection(
+        await rejectCollection(
           collection.id,
-          session,
           rejectRemarks
         );
 
       if (
-        !result
+        !result?.success
       ) {
         throw new Error(
           "Unable to reject this collection."
@@ -467,7 +473,7 @@ const CollectionManagement = () => {
       }
 
       setCollections(
-        safeGetCollections()
+        await safeGetCollections()
       );
 
       setSelectedCollection(
@@ -591,36 +597,46 @@ const CollectionManagement = () => {
       historyEndDate,
     ]);
 
-  const historyRecords =
-    useMemo(() => {
-      return getCollectionHistory({
-        startDate:
-          historyRange.startDate,
-        endDate:
-          historyRange.endDate,
-        status:
-          COLLECTION_STATUS.APPROVED,
-        customerName:
-          historyCustomerSearch,
-      });
-    }, [
-      historyRange,
-      historyCustomerSearch,
-    ]);
+  const [historyRecords, setHistoryRecords] =
+    useState([]);
 
-  const historySummary =
-    useMemo(() => {
-      return getCollectionHistorySummary({
-        startDate:
-          historyRange.startDate,
-        endDate:
-          historyRange.endDate,
-        status:
-          COLLECTION_STATUS.APPROVED,
-        customerName:
-          historyCustomerSearch,
-      });
-    }, [
+  /*
+   * Seeded with an empty summary so the panel renders before the first
+   * fetch resolves.
+   */
+  const [historySummary, setHistorySummary] =
+    useState(EMPTY_HISTORY_SUMMARY);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const query = {
+      startDate:
+        historyRange.startDate,
+      endDate:
+        historyRange.endDate,
+      status:
+        COLLECTION_STATUS.APPROVED,
+      customerName:
+        historyCustomerSearch,
+    };
+
+    Promise.all([
+      getCollectionHistory(query),
+      getCollectionHistorySummary(query),
+    ]).then(([records, summary]) => {
+      if (cancelled) {
+        return;
+      }
+
+      setHistoryRecords(records);
+      setHistorySummary(summary);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
       historyRange,
       historyCustomerSearch,
     ]);
@@ -4428,10 +4444,10 @@ const formatDateTime = (
 ========================================================= */
 
 const safeGetCollections =
-  () => {
+  async () => {
     try {
       const result =
-        getCollections();
+        await getCollections();
 
       return Array.isArray(
         result
