@@ -34,8 +34,18 @@ const NAV_ITEMS = [
   },
 
   /* =======================================================
-     2. LOANS
-     
+     2. CUSTOMERS
+  ======================================================= */
+
+  {
+    id: "customers",
+    label: "Customers",
+    icon: Users,
+  },
+
+  /* =======================================================
+     3. LOANS
+
      Loan Management removed.
      "All Loans" now points to the new Loan page.
   ======================================================= */
@@ -69,44 +79,7 @@ const NAV_ITEMS = [
   },
 
   /* =======================================================
-     3. OPERATIONS & ACCOUNTS
-  ======================================================= */
-
-  {
-    id: "operations-accounts",
-    label: "Operations & Accounts",
-    icon: WalletCards,
-
-    children: [
-      {
-        id: "ledger",
-        label: "Ledger",
-      },
-
-      {
-        id: "investor",
-        label: "Investor",
-      },
-
-      {
-        id: "expense-control",
-        label: "Expense",
-      },
-    ],
-  },
-
-  /* =======================================================
-     4. CUSTOMERS
-  ======================================================= */
-
-  {
-    id: "customers",
-    label: "Customers",
-    icon: Users,
-  },
-
-  /* =======================================================
-     5. VEHICLES
+     4. VEHICLES
   ======================================================= */
 
   {
@@ -133,6 +106,33 @@ const NAV_ITEMS = [
       {
         id: "vehicles-sold",
         label: "Sold Vehicles",
+      },
+    ],
+  },
+
+  /* =======================================================
+     5. OPERATIONS & ACCOUNTS
+  ======================================================= */
+
+  {
+    id: "operations-accounts",
+    label: "Operations & Accounts",
+    icon: WalletCards,
+
+    children: [
+      {
+        id: "ledger",
+        label: "Ledger",
+      },
+
+      {
+        id: "investor",
+        label: "Investor",
+      },
+
+      {
+        id: "expense-control",
+        label: "Expense",
       },
     ],
   },
