@@ -16,7 +16,6 @@ import {
   WalletCards,
   Menu,
   X,
-  Bell,
 } from "lucide-react";
 
 /* =========================================================
@@ -144,12 +143,6 @@ const NAV_ITEMS = [
 ========================================================= */
 
 const BOTTOM_NAV_ITEMS = [
-  {
-    id: "alerts",
-    label: "Alerts",
-    icon: Bell,
-  },
-
   {
     id: "reminders",
     label: "Reminders",
