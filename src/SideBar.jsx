@@ -58,7 +58,7 @@ const NAV_ITEMS = [
     children: [
       {
         id: "loans-all",
-        label: "All Loans",
+        label: "Loan Management",
       },
 
       {
