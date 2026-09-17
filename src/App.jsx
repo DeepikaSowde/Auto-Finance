@@ -22,7 +22,6 @@ import CustomerDetails from "./pages/customers/CustomerDetails";
 import Dashboard from "./pages/dashboard/Dashboard";
 import RecentActivities from "./pages/activities/RecentActivities";
 import Settings from "./pages/settings/Settings";
-import LoanManagement from "./pages/loan/LoanManagement";
 import ExpenseControl from "./pages/expense/ExpenseControl";
 import Investor from "./pages/investor/Investor";
 import Ledger from "./pages/ledger/Ledger";
@@ -161,58 +160,112 @@ const AppLayout = () => {
   const getActiveItem = () => {
     const path = location.pathname;
 
-    if (path === "/customers/onboarding") {
+    if (
+      path ===
+      "/customers/onboarding"
+    ) {
       return "loans-new";
     }
 
-    if (path.startsWith("/customers")) {
+    if (
+      path.startsWith(
+        "/customers"
+      )
+    ) {
       return "customers";
     }
 
-    if (path === "/loan") {
+    /*
+     * New Loan page.
+     * All Loans now uses src/pages/loan/Loan.jsx
+     */
+    if (
+      path === "/loan"
+    ) {
       return "loans-all";
     }
 
-    if (path.startsWith("/loan-management")) {
-      return "loan-management";
+    /*
+     * Old Loan Management path is no longer
+     * a sidebar item.
+     *
+     * It is kept here only as a compatibility
+     * fallback while the route redirects to /loan.
+     */
+    if (
+      path.startsWith(
+        "/loan-management"
+      )
+    ) {
+      return "loans-all";
     }
 
-    if (path.startsWith("/reloan")) {
+    if (
+      path.startsWith(
+        "/reloan"
+      )
+    ) {
       return "reloan";
     }
 
-    if (path.startsWith("/collections")) {
+    if (
+      path.startsWith(
+        "/collections"
+      )
+    ) {
       return "collections";
     }
 
-    if (path.startsWith("/investor")) {
+    if (
+      path.startsWith(
+        "/investor"
+      )
+    ) {
       return "investor";
     }
 
-    if (path.startsWith("/ledger")) {
+    if (
+      path.startsWith(
+        "/ledger"
+      )
+    ) {
       return "ledger";
     }
 
     /*
-     * Repayment route is still supported for backward
-     * compatibility, but it is no longer shown in the
-     * sidebar.
+     * Repayment route remains available
+     * for existing application flows,
+     * but is not shown in the sidebar.
      */
-    if (path.startsWith("/repayment")) {
+    if (
+      path.startsWith(
+        "/repayment"
+      )
+    ) {
       return null;
     }
 
-    if (path.startsWith("/reminders")) {
+    if (
+      path.startsWith(
+        "/reminders"
+      )
+    ) {
       return "reminders";
     }
 
     if (
-      path.startsWith("/control-center")
+      path.startsWith(
+        "/control-center"
+      )
     ) {
       return "control-center";
     }
 
-    if (path.startsWith("/expense-control")) {
+    if (
+      path.startsWith(
+        "/expense-control"
+      )
+    ) {
       return "expense-control";
     }
 
@@ -220,28 +273,49 @@ const AppLayout = () => {
       path === "/vehicles" ||
       path === "/vehicles/all"
     ) {
-      return path === "/vehicles/all"
+      return path ===
+        "/vehicles/all"
         ? "vehicles-all"
         : "vehicles";
     }
 
-    if (path.startsWith("/vehicles/seized")) {
+    if (
+      path.startsWith(
+        "/vehicles/seized"
+      )
+    ) {
       return "vehicles-seized";
     }
 
-    if (path.startsWith("/vehicles/released")) {
+    if (
+      path.startsWith(
+        "/vehicles/released"
+      )
+    ) {
       return "vehicles-released";
     }
 
-    if (path.startsWith("/vehicles/sold")) {
+    if (
+      path.startsWith(
+        "/vehicles/sold"
+      )
+    ) {
       return "vehicles-sold";
     }
 
-    if (path.startsWith("/settings")) {
+    if (
+      path.startsWith(
+        "/settings"
+      )
+    ) {
       return "settings";
     }
 
-    if (path.startsWith("/activities")) {
+    if (
+      path.startsWith(
+        "/activities"
+      )
+    ) {
       return "dashboard";
     }
 
@@ -252,90 +326,124 @@ const AppLayout = () => {
      NAVIGATION
   ====================================================== */
 
-  const handleNavigate = (id) => {
+  const handleNavigate = (
+    id
+  ) => {
     switch (id) {
       case "dashboard":
-        navigate("/dashboard");
+        navigate(
+          "/dashboard"
+        );
         break;
 
       case "customers":
-        navigate("/customers");
+        navigate(
+          "/customers"
+        );
         break;
 
       case "loans":
-        navigate("/loan");
-        break;
-
       case "loans-all":
-        navigate("/loan");
+        /*
+         * New consolidated Loans page.
+         */
+        navigate(
+          "/loan"
+        );
         break;
 
       case "loans-new":
-        navigate("/customers/onboarding");
-        break;
-
-      case "loan-management":
-        navigate("/loan-management");
+        navigate(
+          "/customers/onboarding"
+        );
         break;
 
       case "reloan":
-        navigate("/reloan");
+        navigate(
+          "/reloan"
+        );
         break;
 
       case "collections":
-        navigate("/collections");
+        navigate(
+          "/collections"
+        );
         break;
 
       case "investor":
-        navigate("/investor");
+        navigate(
+          "/investor"
+        );
         break;
 
       case "ledger":
-        navigate("/ledger");
+        navigate(
+          "/ledger"
+        );
         break;
 
       /*
-       * Repayment is intentionally removed from the sidebar.
-       * Existing repayment routes remain functional.
+       * Repayment remains supported internally,
+       * but is not exposed through the sidebar.
        */
       case "repayment":
-        navigate("/repayment");
+        navigate(
+          "/repayment"
+        );
         break;
 
       case "reminders":
-        navigate("/reminders");
+        navigate(
+          "/reminders"
+        );
         break;
 
       case "control-center":
-        navigate("/control-center");
+        navigate(
+          "/control-center"
+        );
         break;
 
       case "expense-control":
-        navigate("/expense-control");
+        navigate(
+          "/expense-control"
+        );
         break;
 
       case "vehicles":
-        navigate("/vehicles");
+        navigate(
+          "/vehicles"
+        );
         break;
 
       case "vehicles-all":
-        navigate("/vehicles/all");
+        navigate(
+          "/vehicles/all"
+        );
         break;
 
       case "vehicles-seized":
-        navigate("/vehicles/seized");
+        navigate(
+          "/vehicles/seized"
+        );
         break;
 
       case "vehicles-released":
-        navigate("/vehicles/released");
+        navigate(
+          "/vehicles/released"
+        );
         break;
 
       case "vehicles-sold":
-        navigate("/vehicles/sold");
+        navigate(
+          "/vehicles/sold"
+        );
         break;
 
       case "settings":
-        navigate("/settings");
+        navigate(
+          "/settings"
+        );
         break;
 
       default:
@@ -362,8 +470,12 @@ const AppLayout = () => {
       ================================================== */}
 
       <SideBar
-        activeItem={getActiveItem()}
-        onNavigate={handleNavigate}
+        activeItem={
+          getActiveItem()
+        }
+        onNavigate={
+          handleNavigate
+        }
       />
 
       {/* =================================================
@@ -439,6 +551,8 @@ const AppLayout = () => {
 
           {/* =================================================
               LOANS
+              
+              New consolidated Loans page.
           ================================================== */}
 
           <Route
@@ -451,15 +565,30 @@ const AppLayout = () => {
           />
 
           {/* =================================================
-              LOAN MANAGEMENT
+              OLD LOAN MANAGEMENT COMPATIBILITY
+              
+              Old LoanManagement.jsx is no longer used.
+              Existing links/bookmarks to /loan-management
+              are redirected to the new Loans page.
           ================================================== */}
 
           <Route
             path="/loan-management"
             element={
-              <ProtectedRoute role="admin">
-                <LoanManagement />
-              </ProtectedRoute>
+              <Navigate
+                to="/loan"
+                replace
+              />
+            }
+          />
+
+          <Route
+            path="/loan-management/*"
+            element={
+              <Navigate
+                to="/loan"
+                replace
+              />
             }
           />
 
@@ -525,15 +654,6 @@ const AppLayout = () => {
 
           {/* =================================================
               REMINDERS
-
-              Dedicated ADMIN reminder module.
-
-              Supports query parameters such as:
-
-              /reminders?loanId=...
-              /reminders?loanNumber=...
-              /reminders?customerId=...
-              /reminders?customerName=...
           ================================================== */}
 
           <Route
@@ -556,11 +676,6 @@ const AppLayout = () => {
 
           {/* =================================================
               CONTROL CENTER
-
-              Admin-only monitoring/dashboard module.
-
-              Expected page file:
-              src/pages/control-center/ControlCenter.jsx
           ================================================== */}
 
           <Route
@@ -597,6 +712,10 @@ const AppLayout = () => {
               </ProtectedRoute>
             }
           />
+
+          {/* =================================================
+              LEDGER
+          ================================================== */}
 
           <Route
             path="/ledger"
@@ -704,7 +823,8 @@ const AppLayout = () => {
             element={
               <Navigate
                 to={
-                  session?.role === "staff"
+                  session?.role ===
+                  "staff"
                     ? "/staff/collection"
                     : "/dashboard"
                 }

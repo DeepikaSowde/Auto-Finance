@@ -1,16 +1,15 @@
 import {
   X,
-  RefreshCw,
   ChevronDown,
-  IndianRupee,
   CalendarDays,
   ShieldCheck,
-  Clock3,
   CarFront,
   UserRound,
   ReceiptText,
   FileText,
   Activity,
+  CalendarRange,
+  List,
   Maximize2,
 } from "lucide-react";
 
@@ -19,10 +18,6 @@ import {
   useState,
 } from "react";
 
-import {
-  useNavigate,
-} from "react-router-dom";
-
 import LoanOverview from "./LoanOverview";
 import LoanCustomerSection from "./LoanCustomerSection";
 import LoanVehicleSection from "./LoanVehicleSection";
@@ -30,43 +25,25 @@ import LoanRepaymentProgress from "./LoanRepaymentProgress";
 import LoanRepaymentSchedule from "./LoanRepaymentSchedule";
 import LoanDocuments from "./LoanDocuments";
 import LoanActivityTimeline from "./LoanActivityTimeline";
+import LoanRepaymentCalendar from "./LoanRepaymentCalendar";
 
 /* =========================================================
    HELPERS
 ========================================================= */
 
-const money = (value) =>
-  `₹${Number(
-    value || 0
-  ).toLocaleString(
-    "en-IN",
-    {
-      maximumFractionDigits: 2,
-    }
-  )}`;
-
 const normalize = (value) =>
-  String(
-    value || ""
-  )
+  String(value || "")
     .trim()
     .toLowerCase();
 
-const getStatusClass = (
-  status
-) => {
-  const normalized =
-    normalize(status);
+const getStatusClass = (status) => {
+  const normalized = normalize(status);
 
-  if (
-    normalized === "active"
-  ) {
+  if (normalized === "active") {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
   }
 
-  if (
-    normalized === "overdue"
-  ) {
+  if (normalized === "overdue") {
     return "border-red-200 bg-red-50 text-red-700";
   }
 
@@ -78,9 +55,7 @@ const getStatusClass = (
     return "border-slate-200 bg-slate-100 text-slate-600";
   }
 
-  if (
-    normalized === "foreclosed"
-  ) {
+  if (normalized === "foreclosed") {
     return "border-violet-200 bg-violet-50 text-violet-700";
   }
 
@@ -95,17 +70,19 @@ const LoanDetailsDrawer = ({
   loan,
   onClose,
 }) => {
-  const navigate =
-    useNavigate();
-
   const [
     openSection,
     setOpenSection,
   ] = useState("overview");
 
   const [
-    scheduleOpen,
-    setScheduleOpen,
+    listViewOpen,
+    setListViewOpen,
+  ] = useState(false);
+
+  const [
+    calendarViewOpen,
+    setCalendarViewOpen,
   ] = useState(false);
 
   /* =======================================================
@@ -116,8 +93,7 @@ const LoanDetailsDrawer = ({
     const previousOverflow =
       document.body.style.overflow;
 
-    document.body.style.overflow =
-      "hidden";
+    document.body.style.overflow = "hidden";
 
     return () => {
       document.body.style.overflow =
@@ -130,20 +106,23 @@ const LoanDetailsDrawer = ({
   ====================================================== */
 
   useEffect(() => {
-    const handleKeyDown =
-      (event) => {
-        if (
-          event.key ===
-          "Escape"
-        ) {
-          if (scheduleOpen) {
-            setScheduleOpen(false);
-            return;
-          }
+    const handleKeyDown = (event) => {
+      if (event.key !== "Escape") {
+        return;
+      }
 
-          onClose?.();
-        }
-      };
+      if (calendarViewOpen) {
+        setCalendarViewOpen(false);
+        return;
+      }
+
+      if (listViewOpen) {
+        setListViewOpen(false);
+        return;
+      }
+
+      onClose?.();
+    };
 
     window.addEventListener(
       "keydown",
@@ -158,7 +137,8 @@ const LoanDetailsDrawer = ({
     };
   }, [
     onClose,
-    scheduleOpen,
+    calendarViewOpen,
+    listViewOpen,
   ]);
 
   /* =======================================================
@@ -171,8 +151,7 @@ const LoanDetailsDrawer = ({
 
   const customerName =
     loan?.customerName ||
-    loan?.customer?.personal
-      ?.name ||
+    loan?.customer?.personal?.name ||
     loan?.customer?.name ||
     "Customer";
 
@@ -187,40 +166,6 @@ const LoanDetailsDrawer = ({
     loan?.loanStatus ||
     "Active";
 
-  const loanAmount =
-    loan?.loanAmount ??
-    loan?.calculation
-      ?.principal ??
-    0;
-
-  const outstanding =
-    loan?.outstandingAmount ??
-    loan?.calculation
-      ?.outstanding ??
-    0;
-
-  const tenure =
-    loan?.tenure ??
-    loan?.loanTenure ??
-    loan?.calculation
-      ?.tenure ??
-    "";
-
-  const tenureUnit =
-    loan?.tenureUnit ||
-    loan?.calculation
-      ?.tenureUnit ||
-    "Months";
-
-  const frequency =
-    loan?.frequency ||
-    loan?.paymentFrequency ||
-    loan?.calculation
-      ?.frequency ||
-    loan?.repayment
-      ?.frequency ||
-    "Monthly";
-
   const installmentCount =
     Array.isArray(
       loan?.repaymentSchedule
@@ -228,31 +173,22 @@ const LoanDetailsDrawer = ({
       ? loan.repaymentSchedule.length
       : 0;
 
+  const repaymentMethod =
+    loan?.repayment?.method ||
+    loan?.repaymentMethod ||
+    loan?.calculation?.repaymentMethod ||
+    "—";
+
   /* =======================================================
      TOGGLE
   ====================================================== */
 
-  const toggleSection = (
-    section
-  ) => {
-    setOpenSection(
-      (current) =>
-        current === section
-          ? null
-          : section
+  const toggleSection = (section) => {
+    setOpenSection((current) =>
+      current === section
+        ? null
+        : section
     );
-  };
-
-  /* =======================================================
-     OPEN SCHEDULE
-  ====================================================== */
-
-  const openSchedule = () => {
-    setScheduleOpen(true);
-  };
-
-  const closeSchedule = () => {
-    setScheduleOpen(false);
   };
 
   return (
@@ -280,15 +216,23 @@ const LoanDetailsDrawer = ({
             absolute
             inset-y-0
             right-0
+
             flex
             w-full
+            min-w-0
             max-w-[820px]
             flex-col
+
             overflow-hidden
+
             border-l
             border-slate-200
             bg-[#F7FAF8]
+
             shadow-[-20px_0_60px_rgba(15,23,42,0.16)]
+
+            sm:max-w-[760px]
+            lg:max-w-[820px]
           "
           onClick={(event) =>
             event.stopPropagation()
@@ -296,222 +240,208 @@ const LoanDetailsDrawer = ({
         >
           {/* =================================================
               HEADER
-          ================================================= */}
+          ================================================== */}
 
           <div
             className="
+              flex
               shrink-0
+              items-center
+              justify-between
+              gap-3
+
               border-b
               border-slate-200
               bg-white
+
+              px-3
+              py-2.5
+
+              sm:px-4
+              sm:py-3
             "
           >
+            {/* LEFT HEADER */}
+
             <div
               className="
                 flex
+                min-w-0
+                flex-1
                 items-center
-                justify-between
-                gap-3
-                px-4
-                py-3.5
-                sm:px-5
-                sm:py-4
+                gap-2.5
+                overflow-hidden
               "
             >
               <div
                 className="
                   flex
-                  min-w-0
+                  h-9
+                  w-9
+                  shrink-0
                   items-center
-                  gap-3
+                  justify-center
+                  rounded-lg
+                  bg-[#EAF5EF]
+                  text-[#0B6B43]
+
+                  sm:h-10
+                  sm:w-10
+                  sm:rounded-xl
+                "
+              >
+                <ReceiptText
+                  size={16}
+                  className="sm:hidden"
+                />
+
+                <ReceiptText
+                  size={18}
+                  className="hidden sm:block"
+                />
+              </div>
+
+              <div
+                className="
+                  min-w-0
+                  flex-1
+                  overflow-hidden
                 "
               >
                 <div
                   className="
                     flex
-                    h-10
-                    w-10
-                    shrink-0
+                    min-w-0
+                    flex-wrap
                     items-center
-                    justify-center
-                    rounded-xl
-                    bg-[#EAF5EF]
-                    text-[#0B6B43]
+                    gap-1.5
+                    sm:gap-2
                   "
                 >
-                  <ReceiptText
-                    size={18}
-                  />
-                </div>
-
-                <div className="min-w-0">
-                  <div
+                  <h2
                     className="
-                      flex
-                      flex-wrap
-                      items-center
-                      gap-2
-                    "
-                  >
-                    <h2
-                      className="
-                        truncate
-                        text-[16px]
-                        font-extrabold
-                        text-[#17221D]
-                        sm:text-[18px]
-                      "
-                    >
-                      {loanNumber}
-                    </h2>
-
-                    <span
-                      className={`
-                        inline-flex
-                        shrink-0
-                        rounded-full
-                        border
-                        px-2
-                        py-1
-                        text-[8px]
-                        font-extrabold
-                        ${getStatusClass(
-                          status
-                        )}
-                      `}
-                    >
-                      {status}
-                    </span>
-                  </div>
-
-                  <p
-                    className="
-                      mt-1
+                      min-w-0
+                      max-w-full
                       truncate
-                      text-[9px]
-                      font-medium
-                      text-slate-400
-                      sm:text-[10px]
+                      text-[14px]
+                      font-extrabold
+                      text-[#17221D]
+
+                      sm:text-[16px]
                     "
                   >
-                    {customerName}
-                    {" • "}
-                    {customerId}
-                  </p>
+                    {loanNumber}
+                  </h2>
+
+                  <span
+                    className={`
+                      inline-flex
+                      shrink-0
+                      rounded-full
+                      border
+                      px-1.5
+                      py-0.5
+
+                      text-[7px]
+                      font-extrabold
+
+                      sm:px-2
+                      sm:py-1
+                      sm:text-[8px]
+
+                      ${getStatusClass(
+                        status
+                      )}
+                    `}
+                  >
+                    {status}
+                  </span>
                 </div>
-              </div>
 
-              <div
-                className="
-                  flex
-                  shrink-0
-                  items-center
-                  gap-2
-                "
-              >
-                <button
-                  type="button"
-                  onClick={onClose}
+                <p
                   className="
-                    flex
-                    h-9
-                    w-9
-                    items-center
-                    justify-center
-                    rounded-lg
-                    border
-                    border-slate-200
-                    bg-white
+                    mt-0.5
+                    max-w-full
+                    truncate
+                    text-[8px]
+                    font-medium
                     text-slate-400
-                    transition
-                    hover:bg-slate-50
-                    hover:text-slate-700
+
+                    sm:text-[9px]
                   "
-                  aria-label="Close"
                 >
-                  <X size={17} />
-                </button>
+                  {customerName}
+                  {" • "}
+                  {customerId}
+                </p>
               </div>
             </div>
 
-            {/* =================================================
-                QUICK LOAN SUMMARY
-            ================================================== */}
+            {/* CLOSE */}
 
-            <div
+            <button
+              type="button"
+              onClick={onClose}
               className="
-                grid
-                grid-cols-2
-                gap-2
-                border-t
-                border-slate-100
-                px-4
-                py-2.5
-                sm:grid-cols-4
-                sm:px-5
+                flex
+                h-8
+                w-8
+                shrink-0
+                items-center
+                justify-center
+                rounded-lg
+                border
+                border-slate-200
+                bg-white
+                text-slate-400
+                transition
+                hover:bg-slate-50
+                hover:text-slate-700
+
+                sm:h-9
+                sm:w-9
               "
+              aria-label="Close loan details"
             >
-              <SummaryCard
-                icon={IndianRupee}
-                label="Loan Amount"
-                value={money(
-                  loanAmount
-                )}
-              />
-
-              <SummaryCard
-                icon={IndianRupee}
-                label="Outstanding"
-                value={money(
-                  outstanding
-                )}
-                highlight
-              />
-
-              <SummaryCard
-                icon={CalendarDays}
-                label="Tenure"
-                value={
-                  tenure
-                    ? `${tenure} ${tenureUnit}`
-                    : "—"
-                }
-              />
-
-              <SummaryCard
-                icon={Clock3}
-                label="Frequency"
-                value={
-                  frequency
-                }
-              />
-            </div>
+              <X size={16} />
+            </button>
           </div>
 
           {/* =================================================
-              DRAWER CONTENT
+              RESPONSIVE SCROLL AREA
           ================================================== */}
 
           <div
             className="
               min-h-0
+              min-w-0
               flex-1
               overflow-y-auto
+              overflow-x-hidden
               overscroll-contain
-              px-3
-              py-3
-              sm:px-4
-              sm:py-4
-              lg:px-5
-              lg:py-5
+
+              px-2.5
+              py-2.5
+
+              sm:px-3.5
+              sm:py-3.5
+
+              lg:px-4
+              lg:py-4
+
+              [scrollbar-width:thin]
             "
           >
             <div
               className="
                 mx-auto
                 w-full
+                min-w-0
                 max-w-[760px]
+
                 space-y-2.5
+
+                sm:space-y-3
               "
             >
               {/* =================================================
@@ -531,6 +461,7 @@ const LoanDetailsDrawer = ({
                     "overview"
                   )
                 }
+                accent="green"
               >
                 <LoanOverview
                   loan={loan}
@@ -554,6 +485,7 @@ const LoanDetailsDrawer = ({
                     "customer"
                   )
                 }
+                accent="blue"
               >
                 <LoanCustomerSection
                   loan={loan}
@@ -577,6 +509,7 @@ const LoanDetailsDrawer = ({
                     "vehicle"
                   )
                 }
+                accent="amber"
               >
                 <LoanVehicleSection
                   loan={loan}
@@ -590,7 +523,7 @@ const LoanDetailsDrawer = ({
               <AccordionSection
                 icon={ShieldCheck}
                 title="Repayment"
-                subtitle="Repayment progress and configuration"
+                subtitle="Repayment progress and current collection state"
                 open={
                   openSection ===
                   "repayment"
@@ -600,211 +533,35 @@ const LoanDetailsDrawer = ({
                     "repayment"
                   )
                 }
-                accent="green"
+                accent="purple"
               >
                 <LoanRepaymentProgress
                   loan={loan}
                 />
-
-                <div
-                  className="
-                    mt-3
-                    grid
-                    grid-cols-2
-                    gap-2
-                    sm:grid-cols-3
-                  "
-                >
-                  <SmallInfo
-                    label="Interest Type"
-                    value={
-                      loan?.interest?.type ||
-                      loan?.interestType ||
-                      loan?.calculation
-                        ?.interestType ||
-                      "—"
-                    }
-                  />
-
-                  <SmallInfo
-                    label="Repayment Method"
-                    value={
-                      loan?.repayment
-                        ?.method ||
-                      loan?.repaymentMethod ||
-                      loan?.calculation
-                        ?.repaymentMethod ||
-                      "—"
-                    }
-                  />
-
-                  <SmallInfo
-                    label="Frequency"
-                    value={
-                      loan?.repayment
-                        ?.frequency ||
-                      frequency
-                    }
-                  />
-
-                  <SmallInfo
-                    label="Tenure"
-                    value={
-                      tenure
-                        ? `${tenure} ${tenureUnit}`
-                        : "—"
-                    }
-                  />
-
-                  <SmallInfo
-                    label="Interest Rate"
-                    value={
-                      loan?.interest?.rate !==
-                        undefined &&
-                      loan?.interest?.rate !==
-                        null
-                        ? `${loan.interest.rate}%`
-                        : "—"
-                    }
-                  />
-
-                  <SmallInfo
-                    label="Installments"
-                    value={
-                      installmentCount ||
-                      "—"
-                    }
-                  />
-                </div>
               </AccordionSection>
 
               {/* =================================================
                   REPAYMENT SCHEDULE
               ================================================== */}
 
-              <button
-                type="button"
-                onClick={openSchedule}
-                className="
-                  group
-                  flex
-                  w-full
-                  items-center
-                  gap-3
-                  rounded-2xl
-                  border
-                  border-slate-200
-                  bg-white
-                  px-4
-                  py-3.5
-                  text-left
-                  shadow-sm
-                  transition
-                  duration-200
-                  hover:-translate-y-[1px]
-                  hover:border-[#B9DCC6]
-                  hover:bg-[#FBFEFC]
-                  hover:shadow-md
-                  sm:px-5
-                "
-              >
-                <div
-                  className="
-                    flex
-                    h-9
-                    w-9
-                    shrink-0
-                    items-center
-                    justify-center
-                    rounded-lg
-                    bg-[#EAF5EF]
-                    text-[#0B6B43]
-                  "
-                >
-                  <CalendarDays
-                    size={16}
-                  />
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div
-                    className="
-                      flex
-                      items-center
-                      gap-2
-                    "
-                  >
-                    <h3
-                      className="
-                        text-[11px]
-                        font-extrabold
-                        text-[#17221D]
-                        sm:text-[12px]
-                      "
-                    >
-                      Repayment Schedule
-                    </h3>
-
-                    {installmentCount >
-                      0 && (
-                      <span
-                        className="
-                          rounded-full
-                          bg-slate-100
-                          px-2
-                          py-0.5
-                          text-[7px]
-                          font-extrabold
-                          text-slate-500
-                        "
-                      >
-                        {
-                          installmentCount
-                        }{" "}
-                        installments
-                      </span>
-                    )}
-                  </div>
-
-                  <p
-                    className="
-                      mt-0.5
-                      text-[8px]
-                      font-medium
-                      text-slate-400
-                      sm:text-[9px]
-                    "
-                  >
-                    Open the full repayment schedule
-                    in a separate view
-                  </p>
-                </div>
-
-                <div
-                  className="
-                    flex
-                    h-8
-                    shrink-0
-                    items-center
-                    gap-1.5
-                    rounded-lg
-                    border
-                    border-[#B9DCC6]
-                    bg-[#F4FAF6]
-                    px-2.5
-                    text-[8px]
-                    font-extrabold
-                    text-[#0B6B43]
-                    transition
-                    group-hover:bg-[#EAF5EF]
-                  "
-                >
-                  <Maximize2
-                    size={12}
-                  />
-                  Open
-                </div>
-              </button>
+              <RepaymentScheduleCard
+                installmentCount={
+                  installmentCount
+                }
+                repaymentMethod={
+                  repaymentMethod
+                }
+                onCalendar={() =>
+                  setCalendarViewOpen(
+                    true
+                  )
+                }
+                onList={() =>
+                  setListViewOpen(
+                    true
+                  )
+                }
+              />
 
               {/* =================================================
                   DOCUMENTS
@@ -823,6 +580,7 @@ const LoanDetailsDrawer = ({
                     "documents"
                   )
                 }
+                accent="slate"
               >
                 <LoanDocuments
                   loan={loan}
@@ -846,26 +604,44 @@ const LoanDetailsDrawer = ({
                     "activity"
                   )
                 }
+                accent="rose"
               >
                 <LoanActivityTimeline
                   loan={loan}
                 />
               </AccordionSection>
 
-              <div className="h-3" />
+              <div className="h-2 sm:h-3" />
             </div>
           </div>
         </aside>
       </div>
 
       {/* =====================================================
-          REPAYMENT SCHEDULE POPUP
+          CALENDAR MODAL
       ====================================================== */}
 
-      {scheduleOpen && (
-        <RepaymentScheduleModal
+      {calendarViewOpen && (
+        <LoanRepaymentCalendar
           loan={loan}
-          onClose={closeSchedule}
+          onClose={() =>
+            setCalendarViewOpen(
+              false
+            )
+          }
+        />
+      )}
+
+      {/* =====================================================
+          LIST MODAL
+      ====================================================== */}
+
+      {listViewOpen && (
+        <RepaymentSchedulePopup
+          loan={loan}
+          onClose={() =>
+            setListViewOpen(false)
+          }
         />
       )}
     </>
@@ -873,10 +649,659 @@ const LoanDetailsDrawer = ({
 };
 
 /* =========================================================
-   REPAYMENT SCHEDULE MODAL
+   ACCORDION SECTION
 ========================================================= */
 
-const RepaymentScheduleModal = ({
+const AccordionSection = ({
+  icon: Icon,
+  title,
+  subtitle,
+  open,
+  onClick,
+  children,
+  accent = "slate",
+}) => {
+  const styles = {
+    green: {
+      border:
+        open
+          ? "border-[#B9DCC6]"
+          : "border-[#CFE8D9]",
+      background:
+        "bg-gradient-to-br from-[#F0FAF4] via-[#FBFEFC] to-white",
+      iconBg:
+        "bg-[#EAF5EF]",
+      iconText:
+        "text-[#0B6B43]",
+      content:
+        "bg-[#FCFFFD]",
+    },
+
+    blue: {
+      border:
+        open
+          ? "border-blue-200"
+          : "border-blue-100",
+      background:
+        "bg-gradient-to-br from-[#F2F7FF] via-[#FBFDFF] to-white",
+      iconBg:
+        "bg-blue-50",
+      iconText:
+        "text-blue-600",
+      content:
+        "bg-[#FCFDFF]",
+    },
+
+    amber: {
+      border:
+        open
+          ? "border-amber-200"
+          : "border-amber-100",
+      background:
+        "bg-gradient-to-br from-[#FFF9EC] via-[#FFFDFC] to-white",
+      iconBg:
+        "bg-amber-50",
+      iconText:
+        "text-amber-600",
+      content:
+        "bg-[#FFFDFC]",
+    },
+
+    purple: {
+      border:
+        open
+          ? "border-violet-200"
+          : "border-violet-100",
+      background:
+        "bg-gradient-to-br from-[#F5F1FF] via-[#FCFAFF] to-white",
+      iconBg:
+        "bg-violet-50",
+      iconText:
+        "text-violet-600",
+      content:
+        "bg-[#FDFBFF]",
+    },
+
+    rose: {
+      border:
+        open
+          ? "border-rose-200"
+          : "border-rose-100",
+      background:
+        "bg-gradient-to-br from-[#FFF4F6] via-[#FFFCFC] to-white",
+      iconBg:
+        "bg-rose-50",
+      iconText:
+        "text-rose-600",
+      content:
+        "bg-[#FFFCFD]",
+    },
+
+    slate: {
+      border:
+        open
+          ? "border-slate-300"
+          : "border-slate-200",
+      background:
+        "bg-gradient-to-br from-[#F7F9FB] via-[#FCFDFE] to-white",
+      iconBg:
+        "bg-slate-100",
+      iconText:
+        "text-slate-600",
+      content:
+        "bg-[#FCFDFC]",
+    },
+  };
+
+  const current =
+    styles[accent] ||
+    styles.slate;
+
+  return (
+    <section
+      className={`
+        w-full
+        min-w-0
+        overflow-hidden
+        rounded-2xl
+        border
+        shadow-sm
+        ${current.border}
+        ${current.background}
+      `}
+    >
+      {/* HEADER */}
+
+      <button
+        type="button"
+        onClick={onClick}
+        className="
+          flex
+          w-full
+          min-w-0
+          items-center
+          gap-2.5
+          px-3
+          py-3
+          text-left
+          transition
+          hover:bg-white/70
+
+          sm:gap-3
+          sm:px-4
+          sm:py-3.5
+        "
+        aria-expanded={open}
+      >
+        <div
+          className={`
+            flex
+            h-9
+            w-9
+            shrink-0
+            items-center
+            justify-center
+            rounded-lg
+
+            sm:h-10
+            sm:w-10
+            sm:rounded-xl
+
+            ${current.iconBg}
+            ${current.iconText}
+          `}
+        >
+          <Icon
+            size={15}
+            className="sm:hidden"
+          />
+
+          <Icon
+            size={17}
+            className="hidden sm:block"
+          />
+        </div>
+
+        <div
+          className="
+            min-w-0
+            flex-1
+            overflow-hidden
+          "
+        >
+          <h3
+            className="
+              truncate
+              text-[11px]
+              font-extrabold
+              text-[#17221D]
+
+              sm:text-[12px]
+            "
+          >
+            {title}
+          </h3>
+
+          <p
+            className="
+              mt-0.5
+              truncate
+              text-[7px]
+              font-medium
+              text-slate-400
+
+              sm:text-[8px]
+            "
+          >
+            {subtitle}
+          </p>
+        </div>
+
+        <ChevronDown
+          size={15}
+          className={`
+            shrink-0
+            text-slate-400
+            transition-transform
+            duration-200
+
+            sm:h-4
+            sm:w-4
+
+            ${
+              open
+                ? "rotate-180"
+                : ""
+            }
+          `}
+        />
+      </button>
+
+      {/* CONTENT */}
+
+      {open && (
+        <div
+          className={`
+            w-full
+            min-w-0
+            overflow-hidden
+            border-t
+            border-black/5
+            p-2.5
+
+            sm:p-3.5
+
+            ${current.content}
+          `}
+        >
+          <div className="w-full min-w-0">
+            {children}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+};
+
+/* =========================================================
+   REPAYMENT SCHEDULE CARD
+========================================================= */
+
+const RepaymentScheduleCard = ({
+  installmentCount,
+  repaymentMethod,
+  onCalendar,
+  onList,
+}) => {
+  return (
+    <section
+      className="
+        w-full
+        min-w-0
+        overflow-hidden
+        rounded-2xl
+        border
+        border-[#DCD2FF]
+
+        bg-gradient-to-br
+        from-[#F5F1FF]
+        via-[#FAF8FF]
+        to-white
+
+        shadow-sm
+      "
+    >
+      {/* HEADER */}
+
+      <div
+        className="
+          flex
+          w-full
+          min-w-0
+          items-start
+          gap-2.5
+          px-3
+          py-3
+
+          sm:items-center
+          sm:gap-3
+          sm:px-4
+          sm:py-3.5
+        "
+      >
+        {/* ICON */}
+
+        <div
+          className="
+            flex
+            h-9
+            w-9
+            shrink-0
+            items-center
+            justify-center
+            rounded-lg
+            bg-[#EEEAFE]
+            text-[#6D4AFF]
+
+            sm:h-10
+            sm:w-10
+            sm:rounded-xl
+          "
+        >
+          <CalendarRange
+            size={16}
+            className="sm:hidden"
+          />
+
+          <CalendarRange
+            size={17}
+            className="hidden sm:block"
+          />
+        </div>
+
+        {/* TITLE */}
+
+        <div
+          className="
+            min-w-0
+            flex-1
+            overflow-hidden
+          "
+        >
+          <h3
+            className="
+              truncate
+              text-[11px]
+              font-extrabold
+              text-[#243253]
+
+              sm:text-[12px]
+            "
+          >
+            Repayment Schedule
+          </h3>
+
+          <p
+            className="
+              mt-0.5
+              truncate
+              text-[7px]
+              font-medium
+              text-[#8792AA]
+
+              sm:text-[8px]
+            "
+          >
+            View repayment dues by date or list
+          </p>
+        </div>
+
+        {/* DESKTOP METADATA */}
+
+        <div
+          className="
+            hidden
+            max-w-[46%]
+            shrink-0
+            flex-wrap
+            justify-end
+            gap-1.5
+
+            md:flex
+          "
+        >
+          <ScheduleBadge
+            label="Repayment Method"
+            value={
+              repaymentMethod
+            }
+          />
+
+          <ScheduleBadge
+            label="Installments"
+            value={
+              installmentCount ||
+              "—"
+            }
+          />
+        </div>
+      </div>
+
+      {/* MOBILE METADATA */}
+
+      <div
+        className="
+          flex
+          min-w-0
+          flex-wrap
+          gap-1.5
+          border-t
+          border-[#E9E2FF]
+          px-3
+          py-2
+
+          md:hidden
+        "
+      >
+        <ScheduleBadge
+          label="Repayment Method"
+          value={
+            repaymentMethod
+          }
+        />
+
+        <ScheduleBadge
+          label="Installments"
+          value={
+            installmentCount ||
+            "—"
+          }
+        />
+      </div>
+
+      {/* ACTIONS */}
+
+      <div
+        className="
+          grid
+          grid-cols-1
+          gap-2
+          border-t
+          border-[#E9E2FF]
+          bg-white/70
+          p-2.5
+
+          sm:grid-cols-2
+          sm:p-3
+        "
+      >
+        <ScheduleViewButton
+          icon={CalendarDays}
+          title="Calendar View"
+          subtitle="View repayment dues by date"
+          onClick={onCalendar}
+          tone="purple"
+        />
+
+        <ScheduleViewButton
+          icon={List}
+          title="List View"
+          subtitle="View complete repayment table"
+          onClick={onList}
+          tone="green"
+        />
+      </div>
+    </section>
+  );
+};
+
+/* =========================================================
+   BADGE
+========================================================= */
+
+const ScheduleBadge = ({
+  label,
+  value,
+}) => {
+  return (
+    <div
+      className="
+        min-w-0
+        max-w-full
+        rounded-lg
+        border
+        border-[#E7E0FF]
+        bg-white/90
+        px-2
+        py-1.5
+
+        sm:px-2.5
+      "
+    >
+      <p
+        className="
+          truncate
+          text-[6px]
+          font-bold
+          uppercase
+          tracking-wide
+          text-slate-400
+        "
+      >
+        {label}
+      </p>
+
+      <p
+        className="
+          mt-0.5
+          max-w-[120px]
+          truncate
+          text-[7px]
+          font-extrabold
+          text-[#243253]
+
+          sm:max-w-[140px]
+          sm:text-[8px]
+        "
+      >
+        {value}
+      </p>
+    </div>
+  );
+};
+
+/* =========================================================
+   VIEW BUTTON
+========================================================= */
+
+const ScheduleViewButton = ({
+  icon: Icon,
+  title,
+  subtitle,
+  onClick,
+  tone,
+}) => {
+  const styles =
+    tone === "purple"
+      ? {
+          wrapper:
+            "border-[#DDD5FF] bg-[#FAF8FF] hover:border-[#C9BEFF] hover:bg-[#F5F1FF]",
+          icon:
+            "bg-[#EEEAFE] text-[#6D4AFF]",
+          action:
+            "text-[#6D4AFF]",
+        }
+      : {
+          wrapper:
+            "border-[#CFE8D9] bg-[#F8FCF9] hover:border-[#A8D0BD] hover:bg-[#F0FAF4]",
+          icon:
+            "bg-[#EAF5EF] text-[#0B6B43]",
+          action:
+            "text-[#0B6B43]",
+        };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`
+        group
+        flex
+        min-w-0
+        items-center
+        gap-2
+        rounded-xl
+        border
+        px-2.5
+        py-2.5
+        text-left
+        transition
+
+        sm:gap-2.5
+        sm:px-3
+        sm:py-2.5
+
+        ${styles.wrapper}
+      `}
+    >
+      <span
+        className={`
+          flex
+          h-8
+          w-8
+          shrink-0
+          items-center
+          justify-center
+          rounded-lg
+
+          sm:h-9
+          sm:w-9
+
+          ${styles.icon}
+        `}
+      >
+        <Icon size={14} />
+      </span>
+
+      <span
+        className="
+          min-w-0
+          flex-1
+          overflow-hidden
+        "
+      >
+        <span
+          className="
+            block
+            truncate
+            text-[8px]
+            font-extrabold
+            text-[#17221D]
+
+            sm:text-[9px]
+          "
+        >
+          {title}
+        </span>
+
+        <span
+          className="
+            mt-0.5
+            block
+            truncate
+            text-[6px]
+            font-medium
+            text-slate-400
+
+            sm:text-[7px]
+          "
+        >
+          {subtitle}
+        </span>
+      </span>
+
+      <Maximize2
+        size={11}
+        className={`
+          shrink-0
+          transition-transform
+          group-hover:scale-110
+
+          sm:h-3
+          sm:w-3
+
+          ${styles.action}
+        `}
+      />
+    </button>
+  );
+};
+
+/* =========================================================
+   REPAYMENT SCHEDULE POPUP
+========================================================= */
+
+const RepaymentSchedulePopup = ({
   loan,
   onClose,
 }) => {
@@ -888,15 +1313,11 @@ const RepaymentScheduleModal = ({
       : 0;
 
   useEffect(() => {
-    const handleKeyDown =
-      (event) => {
-        if (
-          event.key ===
-          "Escape"
-        ) {
-          onClose();
-        }
-      };
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        onClose?.();
+      }
+    };
 
     window.addEventListener(
       "keydown",
@@ -916,117 +1337,60 @@ const RepaymentScheduleModal = ({
       className="
         fixed
         inset-0
-        z-[220]
+        z-[230]
         flex
         items-center
         justify-center
         bg-slate-950/55
-        p-3
+        p-2.5
         backdrop-blur-[3px]
-        sm:p-5
+
+        sm:p-4
       "
       onClick={onClose}
     >
       <div
         className="
           flex
-          h-[92vh]
+          h-[94vh]
           w-full
+          min-w-0
           max-w-[1150px]
           flex-col
           overflow-hidden
-          rounded-2xl
+          rounded-xl
           border
           border-slate-200
           bg-[#F7FAF8]
           shadow-[0_30px_100px_rgba(15,23,42,0.3)]
+
+          sm:h-[92vh]
+          sm:rounded-2xl
         "
         onClick={(event) =>
           event.stopPropagation()
         }
       >
-        {/* =================================================
-            MODAL HEADER
-        ================================================== */}
+        {/* HEADER */}
 
         <div
           className="
             flex
             shrink-0
             items-center
-            justify-between
-            gap-3
+            gap-2
             border-b
             border-slate-200
             bg-white
-            px-4
-            py-3.5
+            px-3
+            py-3
+
+            sm:gap-3
             sm:px-5
+            sm:py-3.5
           "
         >
           <div
-            className="
-              flex
-              min-w-0
-              items-center
-              gap-3
-            "
-          >
-            <div
-              className="
-                flex
-                h-10
-                w-10
-                shrink-0
-                items-center
-                justify-center
-                rounded-xl
-                bg-[#EAF5EF]
-                text-[#0B6B43]
-              "
-            >
-              <CalendarDays
-                size={18}
-              />
-            </div>
-
-            <div className="min-w-0">
-              <h2
-                className="
-                  truncate
-                  text-[15px]
-                  font-extrabold
-                  text-[#17221D]
-                  sm:text-[17px]
-                "
-              >
-                Repayment Schedule
-              </h2>
-
-              <p
-                className="
-                  mt-0.5
-                  truncate
-                  text-[8px]
-                  font-medium
-                  text-slate-400
-                  sm:text-[9px]
-                "
-              >
-                {loan?.loanNumber ||
-                  "Loan"}{" "}
-                •{" "}
-                {loan?.customerName ||
-                  "Customer"}
-                {scheduleCount > 0 &&
-                  ` • ${scheduleCount} installments`}
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
             className="
               flex
               h-9
@@ -1035,40 +1399,110 @@ const RepaymentScheduleModal = ({
               items-center
               justify-center
               rounded-lg
+              bg-[#EAF5EF]
+              text-[#0B6B43]
+
+              sm:h-10
+              sm:w-10
+              sm:rounded-xl
+            "
+          >
+            <List size={16} />
+          </div>
+
+          <div
+            className="
+              min-w-0
+              flex-1
+              overflow-hidden
+            "
+          >
+            <h2
+              className="
+                truncate
+                text-[13px]
+                font-extrabold
+                text-[#17221D]
+
+                sm:text-[17px]
+              "
+            >
+              Repayment Schedule
+            </h2>
+
+            <p
+              className="
+                mt-0.5
+                truncate
+                text-[7px]
+                font-medium
+                text-slate-400
+
+                sm:text-[9px]
+              "
+            >
+              {loan?.loanNumber ||
+                "Loan"}{" "}
+              •{" "}
+              {loan?.customerName ||
+                "Customer"}
+
+              {scheduleCount > 0
+                ? ` • ${scheduleCount} installments`
+                : ""}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="
+              flex
+              h-8
+              w-8
+              shrink-0
+              items-center
+              justify-center
+              rounded-lg
               border
               border-slate-200
               bg-white
               text-slate-400
-              transition
-              hover:bg-slate-50
-              hover:text-slate-700
+
+              sm:h-9
+              sm:w-9
             "
           >
-            <X size={17} />
+            <X size={15} />
           </button>
         </div>
 
-        {/* =================================================
-            SCHEDULE CONTENT
-        ================================================== */}
+        {/* CONTENT */}
 
         <div
           className="
             min-h-0
+            min-w-0
             flex-1
             overflow-auto
-            p-3
+            p-2.5
+
             sm:p-4
             lg:p-5
           "
         >
           <div
             className="
-              rounded-2xl
+              w-full
+              min-w-0
+              overflow-hidden
+              rounded-xl
               border
               border-slate-200
               bg-white
               shadow-sm
+
+              sm:rounded-2xl
             "
           >
             <LoanRepaymentSchedule
@@ -1080,278 +1514,5 @@ const RepaymentScheduleModal = ({
     </div>
   );
 };
-
-/* =========================================================
-   ACCORDION
-========================================================= */
-
-const AccordionSection = ({
-  icon: Icon,
-  title,
-  subtitle,
-  open,
-  onClick,
-  children,
-  accent = "slate",
-}) => {
-  const styles = {
-    slate: {
-      iconBg:
-        "bg-slate-100",
-      iconText:
-        "text-slate-600",
-      border:
-        "border-slate-200",
-    },
-
-    green: {
-      iconBg:
-        "bg-[#EAF5EF]",
-      iconText:
-        "text-[#0B6B43]",
-      border:
-        "border-[#CFE8D9]",
-    },
-
-    blue: {
-      iconBg:
-        "bg-blue-50",
-      iconText:
-        "text-blue-600",
-      border:
-        "border-blue-100",
-    },
-  };
-
-  const style =
-    styles[accent] ||
-    styles.slate;
-
-  return (
-    <section
-      className={`
-        overflow-hidden
-        rounded-2xl
-        border
-        bg-white
-        transition-all
-        duration-200
-        ${
-          open
-            ? style.border
-            : "border-slate-200"
-        }
-      `}
-    >
-      <button
-        type="button"
-        onClick={onClick}
-        className="
-          flex
-          w-full
-          items-center
-          gap-3
-          px-4
-          py-3.5
-          text-left
-          transition
-          hover:bg-[#FAFCFB]
-          sm:px-5
-        "
-        aria-expanded={open}
-      >
-        <div
-          className={`
-            flex
-            h-9
-            w-9
-            shrink-0
-            items-center
-            justify-center
-            rounded-lg
-            ${style.iconBg}
-            ${style.iconText}
-          `}
-        >
-          <Icon size={16} />
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <h3
-            className="
-              text-[11px]
-              font-extrabold
-              text-[#17221D]
-              sm:text-[12px]
-            "
-          >
-            {title}
-          </h3>
-
-          <p
-            className="
-              mt-0.5
-              truncate
-              text-[8px]
-              font-medium
-              text-slate-400
-              sm:text-[9px]
-            "
-          >
-            {subtitle}
-          </p>
-        </div>
-
-        <ChevronDown
-          size={16}
-          className={`
-            shrink-0
-            text-slate-400
-            transition-transform
-            duration-200
-            ${
-              open
-                ? "rotate-180"
-                : ""
-            }
-          `}
-        />
-      </button>
-
-      {open && (
-        <div
-          className="
-            border-t
-            border-slate-100
-            bg-[#FCFDFC]
-            p-3
-            sm:p-4
-          "
-        >
-          {children}
-        </div>
-      )}
-    </section>
-  );
-};
-
-/* =========================================================
-   SUMMARY CARD
-========================================================= */
-
-const SummaryCard = ({
-  icon: Icon,
-  label,
-  value,
-  highlight = false,
-}) => (
-  <div
-    className="
-      flex
-      min-w-0
-      items-center
-      gap-2
-      rounded-lg
-      border
-      border-slate-100
-      bg-[#FAFCFB]
-      px-2.5
-      py-2
-    "
-  >
-    <div
-      className="
-        flex
-        h-7
-        w-7
-        shrink-0
-        items-center
-        justify-center
-        rounded-md
-        bg-[#EAF5EF]
-        text-[#0B6B43]
-      "
-    >
-      <Icon size={12} />
-    </div>
-
-    <div className="min-w-0">
-      <p
-        className="
-          truncate
-          text-[7px]
-          font-bold
-          uppercase
-          tracking-wide
-          text-slate-400
-        "
-      >
-        {label}
-      </p>
-
-      <p
-        className={`
-          mt-0.5
-          truncate
-          text-[9px]
-          font-extrabold
-          sm:text-[10px]
-          ${
-            highlight
-              ? "text-[#0B6B43]"
-              : "text-[#17221D]"
-          }
-        `}
-      >
-        {value}
-      </p>
-    </div>
-  </div>
-);
-
-/* =========================================================
-   SMALL INFO
-========================================================= */
-
-const SmallInfo = ({
-  label,
-  value,
-}) => (
-  <div
-    className="
-      rounded-xl
-      border
-      border-slate-200
-      bg-white
-      px-3
-      py-2.5
-    "
-  >
-    <p
-      className="
-        text-[7px]
-        font-bold
-        uppercase
-        tracking-wide
-        text-slate-400
-      "
-    >
-      {label}
-    </p>
-
-    <p
-      className="
-        mt-1
-        break-words
-        text-[10px]
-        font-extrabold
-        leading-tight
-        text-[#253252]
-      "
-    >
-      {value}
-    </p>
-  </div>
-);
 
 export default LoanDetailsDrawer;

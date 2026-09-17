@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 
 /* =========================================================
-   NAVIGATION
+   MAIN NAVIGATION
 ========================================================= */
 
 const NAV_ITEMS = [
@@ -36,6 +36,9 @@ const NAV_ITEMS = [
 
   /* =======================================================
      2. LOANS
+     
+     Loan Management removed.
+     "All Loans" now points to the new Loan page.
   ======================================================= */
 
   {
@@ -52,11 +55,6 @@ const NAV_ITEMS = [
       {
         id: "loans-new",
         label: "New Loan",
-      },
-
-      {
-        id: "loan-management",
-        label: "Loan Management",
       },
 
       {
@@ -82,6 +80,11 @@ const NAV_ITEMS = [
 
     children: [
       {
+        id: "ledger",
+        label: "Ledger",
+      },
+
+      {
         id: "investor",
         label: "Investor",
       },
@@ -89,11 +92,6 @@ const NAV_ITEMS = [
       {
         id: "expense-control",
         label: "Expense",
-      },
-
-      {
-        id: "ledger",
-        label: "Ledger",
       },
     ],
   },
@@ -139,30 +137,24 @@ const NAV_ITEMS = [
       },
     ],
   },
+];
 
-  /* =======================================================
-     6. ALERTS
-  ======================================================= */
+/* =========================================================
+   BOTTOM NAVIGATION
+========================================================= */
 
+const BOTTOM_NAV_ITEMS = [
   {
     id: "alerts",
     label: "Alerts",
     icon: Bell,
   },
 
-  /* =======================================================
-     7. REMINDERS
-  ======================================================= */
-
   {
     id: "reminders",
     label: "Reminders",
     icon: Receipt,
   },
-
-  /* =======================================================
-     8. CONTROL CENTER
-  ======================================================= */
 
   {
     id: "control-center",
@@ -199,28 +191,36 @@ const SideBar = ({
     setMobileOpen,
   ] = useState(false);
 
+  /* =======================================================
+     DETERMINE OPEN PARENT
+     
+     Loan Management has been removed, so the Loans group
+     now contains only:
+     All Loans / New Loan / Re-loan / Collections
+  ====================================================== */
+
   const [
     openMenu,
     setOpenMenu,
   ] = useState(
     activeItem === "loans-all" ||
-    activeItem === "loans-new" ||
-    activeItem === "loan-management" ||
-    activeItem === "reloan" ||
-    activeItem === "collections"
+      activeItem === "loans-new" ||
+      activeItem === "reloan" ||
+      activeItem === "collections"
       ? "loans"
       : activeItem === "investor" ||
-        activeItem === "expense-control" ||
-        activeItem === "ledger"
-      ? "operations-accounts"
-      : activeItem?.startsWith?.(
-          "vehicles-"
-        )
-      ? "vehicles"
-      : null
+          activeItem ===
+            "expense-control" ||
+          activeItem === "ledger"
+        ? "operations-accounts"
+        : activeItem?.startsWith?.(
+              "vehicles-"
+            )
+          ? "vehicles"
+          : null
   );
 
-  /* =====================================================
+  /* =======================================================
      NAVIGATION
   ====================================================== */
 
@@ -240,43 +240,35 @@ const SideBar = ({
       return;
     }
 
-    onNavigate(
-      item.id
-    );
-
+    onNavigate(item.id);
     setMobileOpen(false);
   };
 
-  /* =====================================================
+  /* =======================================================
      CHILD NAVIGATION
   ====================================================== */
 
   const handleChildClick = (
     child
   ) => {
-    onNavigate(
-      child.id
-    );
-
+    onNavigate(child.id);
     setMobileOpen(false);
   };
 
-  /* =====================================================
+  /* =======================================================
      NAV BUTTON
   ====================================================== */
 
   const renderNavButton = (
     item
   ) => {
-    const Icon =
-      item.icon;
+    const Icon = item.icon;
 
     const hasChildren =
       Array.isArray(
         item.children
       ) &&
-      item.children.length >
-        0;
+      item.children.length > 0;
 
     const childActive =
       hasChildren
@@ -288,19 +280,15 @@ const SideBar = ({
         : false;
 
     const isActive =
-      activeItem ===
-        item.id ||
+      activeItem === item.id ||
       childActive;
 
     const isOpen =
-      openMenu ===
-      item.id;
+      openMenu === item.id;
 
     return (
       <div
-        key={
-          item.id
-        }
+        key={item.id}
         className="w-full"
       >
         {/* =================================================
@@ -464,9 +452,7 @@ const SideBar = ({
 
                   return (
                     <button
-                      key={
-                        child.id
-                      }
+                      key={child.id}
                       type="button"
                       onClick={() =>
                         handleChildClick(
@@ -526,7 +512,7 @@ const SideBar = ({
     );
   };
 
-  /* =====================================================
+  /* =======================================================
      SIDEBAR
   ====================================================== */
 
@@ -601,7 +587,11 @@ const SideBar = ({
             <img
               src="/Auto-Finance-Logo.png"
               alt="MotoLend"
-              className="h-full w-full object-contain"
+              className="
+                h-full
+                w-full
+                object-contain
+              "
             />
           </div>
 
@@ -822,7 +812,11 @@ const SideBar = ({
               <img
                 src="/Auto-Finance-Logo.png"
                 alt="MotoLend"
-                className="h-full w-full object-contain"
+                className="
+                  h-full
+                  w-full
+                  object-contain
+                "
               />
             </div>
 
@@ -903,11 +897,21 @@ const SideBar = ({
             py-2.5
           "
         >
+          {/* ALERTS / REMINDERS / CONTROL CENTER */}
+
+          <div className="space-y-1">
+            {BOTTOM_NAV_ITEMS.map(
+              renderNavButton
+            )}
+          </div>
+
           {/* SETTINGS */}
 
-          {renderNavButton(
-            SETTINGS_ITEM
-          )}
+          <div className="mt-1">
+            {renderNavButton(
+              SETTINGS_ITEM
+            )}
+          </div>
 
           {/* COLLAPSE */}
 

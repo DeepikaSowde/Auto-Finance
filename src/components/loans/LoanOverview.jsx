@@ -1,13 +1,15 @@
 import {
-  getNextDue,
-  getEmi,
-  getTenure,
-  getLoanOutstanding,
-  money,
   formatDate,
+  money,
+  getNextDue,
+  getTenure,
+  getEmi,
+  getLoanOutstanding,
 } from "../../utils/loan/loanHelpers";
 
-const LoanOverview = ({ loan }) => {
+const LoanOverview = ({
+  loan,
+}) => {
   const nextDue =
     getNextDue(loan);
 
@@ -17,8 +19,15 @@ const LoanOverview = ({ loan }) => {
   return (
     <Section title="Loan Overview">
 
-      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
-
+      <div
+        className="
+          grid
+          grid-cols-2
+          gap-2.5
+          md:grid-cols-3
+          lg:grid-cols-4
+        "
+      >
         <Metric
           label="Sanctioned Amount"
           value={`₹${money(
@@ -80,26 +89,11 @@ const LoanOverview = ({ loan }) => {
         />
 
         <Metric
-          label="Outstanding Principal"
-          value={`₹${money(
-            calculation.outstandingPrincipal
-          )}`}
-        />
-
-        <Metric
-          label="Outstanding Interest"
-          value={`₹${money(
-            calculation.outstandingInterest
-          )}`}
-        />
-
-        <Metric
           label="Next Due Date"
           value={formatDate(
             nextDue?.dueDate
           )}
         />
-
       </div>
     </Section>
   );
@@ -109,10 +103,18 @@ const Section = ({
   title,
   children,
 }) => (
-  <section className="mb-5">
-    <h3 className="mb-2.5 text-[12px] font-semibold text-[#17221D]">
+  <section>
+    <h3
+      className="
+        mb-2.5
+        text-[12px]
+        font-semibold
+        text-[#17221D]
+      "
+    >
       {title}
     </h3>
+
     {children}
   </section>
 );
@@ -122,17 +124,39 @@ const Metric = ({
   value,
   green = false,
 }) => (
-  <div className="rounded-lg border border-slate-200 px-3 py-2.5">
-    <p className="text-[9px] uppercase tracking-wide text-slate-400">
+  <div
+    className="
+      rounded-xl
+      border
+      border-slate-200
+      bg-white/80
+      px-3
+      py-2.5
+      shadow-sm
+    "
+  >
+    <p
+      className="
+        text-[9px]
+        uppercase
+        tracking-wide
+        text-slate-400
+      "
+    >
       {label}
     </p>
 
     <p
-      className={`mt-1 text-[11px] font-semibold ${
-        green
-          ? "text-[#0B5D3B]"
-          : "text-[#17221D]"
-      }`}
+      className={`
+        mt-1
+        text-[11px]
+        font-semibold
+        ${
+          green
+            ? "text-[#0B5D3B]"
+            : "text-[#17221D]"
+        }
+      `}
     >
       {value}
     </p>

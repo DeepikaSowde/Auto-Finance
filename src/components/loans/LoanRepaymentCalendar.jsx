@@ -27,6 +27,7 @@ import {
 const LoanRepaymentCalendar = ({
   loan,
   onClose,
+  embedded = false,
 }) => {
   const navigate =
     useNavigate();
@@ -236,27 +237,38 @@ const LoanRepaymentCalendar = ({
     new Date();
 
   return (
-    <div
-      className="
-        fixed
-        inset-0
-        z-[500]
-        flex
-        items-center
-        justify-center
-        bg-slate-950/45
-        p-3
-        backdrop-blur-[3px]
-        sm:p-4
-      "
-      onClick={onClose}
-    >
+<div
+  className={`
+    ${
+      embedded
+        ? "absolute inset-0 z-[80] flex items-center justify-center bg-slate-950/25 p-2 sm:p-3"
+        : "fixed inset-0 z-[500] flex items-center justify-center bg-slate-950/45 p-3 backdrop-blur-[3px] sm:p-4"
+    }
+  `}
+  onClick={onClose}
+>
       {/* =================================================
           SINGLE CENTERED POPUP
       ================================================== */}
 
       <div
-        className="
+  className={
+    embedded
+      ? `
+          flex
+          h-full
+          w-full
+          max-h-full
+          max-w-full
+          flex-col
+          overflow-hidden
+          rounded-2xl
+          border
+          border-slate-200
+          bg-white
+          shadow-[0_20px_60px_rgba(15,23,42,0.18)]
+        `
+      : `
           flex
           w-full
           max-w-[1180px]
@@ -268,11 +280,12 @@ const LoanRepaymentCalendar = ({
           border-slate-200
           bg-white
           shadow-[0_30px_100px_rgba(15,23,42,0.25)]
-        "
-        onClick={(event) =>
-          event.stopPropagation()
-        }
-      >
+        `
+  }
+  onClick={(event) =>
+    event.stopPropagation()
+  }
+>
         {/* =================================================
             HEADER
         ================================================== */}

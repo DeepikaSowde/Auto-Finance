@@ -37,10 +37,19 @@ const LoanRepaymentProgress = ({
 
       <div className="rounded-xl border border-slate-200 p-3.5">
 
-        <div className="flex items-center justify-between">
-          <p className="text-[17px] font-semibold">
-            {paidEmis} of {totalEmis} EMIs paid
-          </p>
+        <div className="flex min-w-0 items-center justify-between gap-3">
+         <p
+  className="
+    min-w-0
+    truncate
+    text-[13px]
+    font-semibold
+    sm:text-[15px]
+    lg:text-[17px]
+  "
+>
+  {paidEmis} of {totalEmis} EMIs paid
+</p>
 
           <span className="text-sm font-semibold text-[#0B5D3B]">
             {progress}%
