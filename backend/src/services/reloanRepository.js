@@ -5,9 +5,7 @@
 // already holds; what lives here is the rule set it decides against and a
 // write-once record of each check.
 
-import { db } from "../db/connection.js";
-
-const nowIso = () => new Date().toISOString();
+import { query, withTransaction } from "../db/connection.js";
 
 const pad = (number, length = 4) => String(number).padStart(length, "0");
 
@@ -24,40 +22,33 @@ export const DEFAULT_RELOAN_RULES = {
   requireDocuments: true,
 };
 
-export const getReLoanRules = () => {
-  const row = db.prepare("SELECT * FROM reloan_rules WHERE pk = 1").get();
+export const getReLoanRules = async () => {
+  const result = await query("SELECT rules FROM reloan_rules WHERE pk = 1");
 
-  if (!row) {
-    return { ...DEFAULT_RELOAN_RULES };
-  }
-
-  try {
-    return { ...DEFAULT_RELOAN_RULES, ...JSON.parse(row.rules_json) };
-  } catch {
-    return { ...DEFAULT_RELOAN_RULES };
-  }
+  return { ...DEFAULT_RELOAN_RULES, ...(result.rows[0]?.rules ?? {}) };
 };
 
-export const saveReLoanRules = (rules = {}) => {
-  const merged = { ...getReLoanRules(), ...rules };
+export const saveReLoanRules = async (rules = {}) => {
+  const merged = { ...(await getReLoanRules()), ...rules };
 
-  db.prepare(
-    `INSERT INTO reloan_rules (pk, rules_json, updated_at)
-     VALUES (1, $rulesJson, $updatedAt)
-     ON CONFLICT (pk) DO UPDATE SET rules_json = $rulesJson, updated_at = $updatedAt`
-  ).run({ $rulesJson: JSON.stringify(merged), $updatedAt: nowIso() });
+  await query(
+    `INSERT INTO reloan_rules (pk, rules, updated_at)
+     VALUES (1, $1, now())
+     ON CONFLICT (pk) DO UPDATE SET rules = EXCLUDED.rules, updated_at = now()`,
+    [JSON.stringify(merged)]
+  );
 
   return merged;
 };
 
 const mapCheck = (row) => ({
-  ...JSON.parse(row.result_json || "{}"),
+  ...(row.result ?? {}),
   id: row.id,
   customerId: row.customer_id || "",
   loanId: row.loan_id || "",
   eligible: Boolean(row.eligible),
   status: row.status,
-  checkedAt: row.checked_at,
+  checkedAt: new Date(row.checked_at).toISOString(),
 });
 
 const SELECT_CHECKS = `
@@ -70,52 +61,52 @@ const SELECT_CHECKS = `
   LEFT JOIN loans ON loans.pk = reloan_eligibility_checks.loan_pk
 `;
 
-export const getEligibilityChecks = (loanId) => {
-  if (!loanId) {
-    return db
-      .prepare(`${SELECT_CHECKS} ORDER BY reloan_eligibility_checks.pk DESC`)
-      .all()
-      .map(mapCheck);
-  }
+export const getEligibilityChecks = async (loanId) => {
+  const result = loanId
+    ? await query(
+        `${SELECT_CHECKS} WHERE loans.id = $1 ORDER BY reloan_eligibility_checks.pk DESC`,
+        [loanId]
+      )
+    : await query(`${SELECT_CHECKS} ORDER BY reloan_eligibility_checks.pk DESC`);
 
-  return db
-    .prepare(`${SELECT_CHECKS} WHERE loans.id = $loanId ORDER BY reloan_eligibility_checks.pk DESC`)
-    .all({ $loanId: loanId })
-    .map(mapCheck);
+  return result.rows.map(mapCheck);
 };
 
-export const saveEligibilityCheck = (result = {}) => {
-  const now = nowIso();
+export const saveEligibilityCheck = async (result = {}) => {
+  const checkId = await withTransaction(async (client) => {
+    const [customerResult, loanResult] = await Promise.all([
+      result.customerId
+        ? client.query("SELECT pk FROM customers WHERE id = $1", [result.customerId])
+        : Promise.resolve({ rows: [] }),
+      result.loanId
+        ? client.query("SELECT pk FROM loans WHERE id = $1", [result.loanId])
+        : Promise.resolve({ rows: [] }),
+    ]);
 
-  const customerRow = result.customerId
-    ? db.prepare("SELECT pk FROM customers WHERE id = $id").get({ $id: result.customerId })
-    : null;
-
-  const loanRow = result.loanId
-    ? db.prepare("SELECT pk FROM loans WHERE id = $id").get({ $id: result.loanId })
-    : null;
-
-  const insert = db
-    .prepare(
+    const insert = await client.query(
       `INSERT INTO reloan_eligibility_checks
-        (id, customer_pk, loan_pk, eligible, status, result_json, checked_at)
-       VALUES ('', $customerPk, $loanPk, $eligible, $status, $resultJson, $checkedAt)`
-    )
-    .run({
-      $customerPk: customerRow?.pk ?? null,
-      $loanPk: loanRow?.pk ?? null,
-      $eligible: result.eligible ? 1 : 0,
-      $status: result.status || "NOT_ELIGIBLE",
-      $resultJson: JSON.stringify(result),
-      $checkedAt: result.checkedAt || now,
-    });
+        (id, customer_pk, loan_pk, eligible, status, result, checked_at)
+       VALUES ('', $1, $2, $3, $4, $5, COALESCE($6::timestamptz, now()))
+       RETURNING pk`,
+      [
+        customerResult.rows[0]?.pk ?? null,
+        loanResult.rows[0]?.pk ?? null,
+        Boolean(result.eligible),
+        result.status || "NOT_ELIGIBLE",
+        JSON.stringify(result),
+        result.checkedAt || null,
+      ]
+    );
 
-  const id = `RLC-${pad(insert.lastInsertRowid)}`;
+    const pk = insert.rows[0].pk;
+    const id = `RLC-${pad(pk)}`;
 
-  db.prepare("UPDATE reloan_eligibility_checks SET id = $id WHERE pk = $pk").run({
-    $id: id,
-    $pk: insert.lastInsertRowid,
+    await client.query("UPDATE reloan_eligibility_checks SET id = $1 WHERE pk = $2", [id, pk]);
+
+    return id;
   });
 
-  return getEligibilityChecks().find((check) => check.id === id) || null;
+  const checks = await getEligibilityChecks();
+
+  return checks.find((check) => check.id === checkId) || null;
 };

@@ -15,40 +15,52 @@ import {
   seizeVehicle,
 } from "../services/vehicleRepository.js";
 import { requireRole } from "../middleware/requireAuth.js";
+import { asyncHandler } from "../util/asyncHandler.js";
 
 export const vehiclesRouter = Router();
 
-vehiclesRouter.get("/", (req, res) => {
-  const { status } = req.query;
+vehiclesRouter.get(
+  "/",
+  asyncHandler(async (req, res) => {
+    const { status } = req.query;
 
-  res.json(status ? getVehiclesByStatus(String(status).toUpperCase()) : getVehicles());
-});
+    res.json(
+      status ? await getVehiclesByStatus(String(status).toUpperCase()) : await getVehicles()
+    );
+  })
+);
 
-vehiclesRouter.get("/counts", (req, res) => {
-  res.json(getVehicleStatusCounts());
-});
+vehiclesRouter.get(
+  "/counts",
+  asyncHandler(async (req, res) => {
+    res.json(await getVehicleStatusCounts());
+  })
+);
 
-vehiclesRouter.get("/:vehicleId", (req, res) => {
-  const vehicle = getVehicleById(req.params.vehicleId);
+vehiclesRouter.get(
+  "/:vehicleId",
+  asyncHandler(async (req, res) => {
+    const vehicle = await getVehicleById(req.params.vehicleId);
 
-  if (!vehicle) {
-    return res.status(404).json({ error: "Vehicle not found." });
-  }
+    if (!vehicle) {
+      return res.status(404).json({ error: "Vehicle not found." });
+    }
 
-  res.json(vehicle);
-});
+    res.json(vehicle);
+  })
+);
 
-vehiclesRouter.get("/:vehicleId/events", (req, res) => {
-  res.json(getVehicleEvents(req.params.vehicleId));
-});
+vehiclesRouter.get(
+  "/:vehicleId/events",
+  asyncHandler(async (req, res) => {
+    res.json(await getVehicleEvents(req.params.vehicleId));
+  })
+);
 
-const action = (handler) => (req, res, next) => {
-  try {
-    res.json(handler(req));
-  } catch (error) {
-    next(error);
-  }
-};
+const action = (handler) =>
+  asyncHandler(async (req, res) => {
+    res.json(await handler(req));
+  });
 
 vehiclesRouter.post(
   "/:vehicleId/seize",
@@ -77,5 +89,7 @@ vehiclesRouter.post(
 vehiclesRouter.post(
   "/:vehicleId/cancel-sale",
   requireRole("admin"),
-  action((req) => cancelVehicleSale(req.params.vehicleId, req.body?.reason || "", req.user.username))
+  action((req) =>
+    cancelVehicleSale(req.params.vehicleId, req.body?.reason || "", req.user.username)
+  )
 );

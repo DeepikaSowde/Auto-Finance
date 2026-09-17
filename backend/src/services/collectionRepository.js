@@ -1,16 +1,12 @@
 // src/services/collectionRepository.js
 //
 // Collections are payment submissions that go through
-// Pending -> Approved | Rejected | Reversed. Approval is the only thing
-// that moves money: it runs the allocation waterfall and posts the result
-// against the loan's installments inside a single transaction.
+// Pending -> Approved | Rejected | Reversed. Approval is the only thing that
+// moves money: it runs the allocation waterfall and posts the result against
+// the loan's installments inside a single transaction.
 
-import { db } from "../db/connection.js";
-import {
-  buildLoan,
-  getCustomerRow,
-  getInstallmentRows,
-} from "./customerRepository.js";
+import { query, withTransaction } from "../db/connection.js";
+import { buildLoan, getCustomerRow } from "./customerRepository.js";
 import {
   applyAllocation,
   buildAllocation,
@@ -28,9 +24,9 @@ export const COLLECTION_STATUS = {
   REVERSED: "Reversed",
 };
 
-const nowIso = () => new Date().toISOString();
-
 const pad = (number, length = 4) => String(number).padStart(length, "0");
+
+const iso = (value) => (value ? new Date(value).toISOString() : "");
 
 class CollectionError extends Error {
   constructor(message, statusCode = 400) {
@@ -40,61 +36,65 @@ class CollectionError extends Error {
   }
 }
 
-const mapCollection = (row) => ({
-  id: row.id,
-  customerId: row.customer_id || "",
-  customerName: row.customer_name || "",
-  mobileNumber: row.mobile_number || "",
-  loanId: row.loan_id || "",
-  loanNumber: row.loan_number || "",
+const mapCollection = (row) => {
+  const personal = row.personal ?? {};
 
-  status: row.status,
+  return {
+    id: row.id,
+    customerId: row.customer_id || "",
+    customerName: personal.name || "",
+    mobileNumber: personal.mobileNumber || "",
+    loanId: row.loan_id || "",
+    loanNumber: row.loan_number || "",
 
-  amount: row.amount,
-  dueAmount: row.due_amount,
-  penaltyAmount: row.penalty_amount,
-  totalPayable: row.total_payable,
+    status: row.status,
 
-  paymentType: row.payment_type || "",
-  payMode: row.pay_mode || "",
-  paymentMode: row.pay_mode || "",
-  receiptNumber: row.receipt_number || "",
-  dueDate: row.due_date || "",
-  installment: row.installment_number,
+    amount: row.amount,
+    dueAmount: row.due_amount,
+    penaltyAmount: row.penalty_amount,
+    totalPayable: row.total_payable,
 
-  staffName: row.staff_name || "",
-  location: row.location || "",
-  remarks: row.remarks || "",
+    paymentType: row.payment_type || "",
+    payMode: row.pay_mode || "",
+    paymentMode: row.pay_mode || "",
+    receiptNumber: row.receipt_number || "",
+    dueDate: row.due_date || "",
+    installment: row.installment_number,
 
-  overdueDays: row.overdue_days,
-  graceDays: row.grace_days,
+    staffName: row.staff_name || "",
+    location: row.location || "",
+    remarks: row.remarks || "",
 
-  amountTowardDue: row.amount_toward_due,
-  amountTowardPenalty: row.amount_toward_penalty,
-  amountTowardPrincipal: row.amount_toward_principal,
-  amountTowardAdvance: row.amount_toward_advance,
-  amountExcess: row.amount_excess,
+    overdueDays: row.overdue_days,
+    graceDays: row.grace_days,
 
-  allocation: row.allocation_json ? JSON.parse(row.allocation_json) : null,
-  repaymentProcessed: Boolean(row.repayment_processed),
-  repaymentProcessedAt: row.repayment_processed_at || "",
-  repaymentProcessingStatus: row.repayment_processing_status,
-  repaymentError: row.repayment_error || "",
+    amountTowardDue: row.amount_toward_due,
+    amountTowardPenalty: row.amount_toward_penalty,
+    amountTowardPrincipal: row.amount_toward_principal,
+    amountTowardAdvance: row.amount_toward_advance,
+    amountExcess: row.amount_excess,
 
-  submittedAt: row.submitted_at,
-  collectedDate: row.collected_date || "",
-  approvedAt: row.approved_at || "",
-  approvedBy: row.approved_by || "",
-  rejectedAt: row.rejected_at || "",
-  rejectedBy: row.rejected_by || "",
-  rejectionRemarks: row.rejection_remarks || "",
-  reversedAt: row.reversed_at || "",
-  reversedBy: row.reversed_by || "",
-  reversalReason: row.reversal_reason || "",
+    allocation: row.allocation ?? null,
+    repaymentProcessed: Boolean(row.repayment_processed),
+    repaymentProcessedAt: iso(row.repayment_processed_at),
+    repaymentProcessingStatus: row.repayment_processing_status,
+    repaymentError: row.repayment_error || "",
 
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-});
+    submittedAt: iso(row.submitted_at),
+    collectedDate: row.collected_date || "",
+    approvedAt: iso(row.approved_at),
+    approvedBy: row.approved_by || "",
+    rejectedAt: iso(row.rejected_at),
+    rejectedBy: row.rejected_by || "",
+    rejectionRemarks: row.rejection_remarks || "",
+    reversedAt: iso(row.reversed_at),
+    reversedBy: row.reversed_by || "",
+    reversalReason: row.reversal_reason || "",
+
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
+  };
+};
 
 /*
  * Collections carry denormalised customer/loan identifiers because the UI
@@ -104,7 +104,7 @@ const SELECT_COLLECTIONS = `
   SELECT
     collections.*,
     customers.id AS customer_id,
-    customers.personal_json AS personal_json,
+    customers.personal AS personal,
     loans.id AS loan_id,
     loans.loan_number AS loan_number
   FROM collections
@@ -112,37 +112,27 @@ const SELECT_COLLECTIONS = `
   LEFT JOIN loans ON loans.pk = collections.loan_pk
 `;
 
-const hydrate = (row) => {
-  if (!row) return null;
+export const getCollections = async () => {
+  const result = await query(`${SELECT_COLLECTIONS} ORDER BY collections.pk DESC`);
 
-  const personal = row.personal_json ? JSON.parse(row.personal_json) : {};
-
-  return mapCollection({
-    ...row,
-    customer_name: personal.name || "",
-    mobile_number: personal.mobileNumber || "",
-  });
+  return result.rows.map(mapCollection);
 };
 
-export const getCollections = () =>
-  db.prepare(`${SELECT_COLLECTIONS} ORDER BY collections.pk DESC`).all().map(hydrate);
+export const getCollectionById = async (collectionId) => {
+  const result = await query(`${SELECT_COLLECTIONS} WHERE collections.id = $1`, [collectionId]);
 
-export const getCollectionById = (collectionId) =>
-  hydrate(
-    db.prepare(`${SELECT_COLLECTIONS} WHERE collections.id = $id`).get({ $id: collectionId })
-  );
+  return result.rows[0] ? mapCollection(result.rows[0]) : null;
+};
 
-const getCollectionRow = (collectionId) =>
-  db.prepare("SELECT * FROM collections WHERE id = $id").get({ $id: collectionId });
+export const createCollection = async (payload = {}, submittedBy) => {
+  const [customerRow, loanResult] = await Promise.all([
+    payload.customerId ? getCustomerRow(payload.customerId) : Promise.resolve(null),
+    payload.loanId
+      ? query("SELECT * FROM loans WHERE id = $1", [payload.loanId])
+      : Promise.resolve({ rows: [] }),
+  ]);
 
-const getLoanRowById = (loanId) =>
-  db.prepare("SELECT * FROM loans WHERE id = $id").get({ $id: loanId });
-
-export const createCollection = (payload = {}, submittedBy) => {
-  const now = nowIso();
-
-  const customerRow = payload.customerId ? getCustomerRow(payload.customerId) : null;
-  const loanRow = payload.loanId ? getLoanRowById(payload.loanId) : null;
+  const loanRow = loanResult.rows[0];
 
   if (!loanRow) {
     throw new CollectionError("A valid loanId is required.", 404);
@@ -154,47 +144,41 @@ export const createCollection = (payload = {}, submittedBy) => {
     throw new CollectionError("Collection amount must be greater than zero.");
   }
 
-  const result = db
-    .prepare(
+  const collectionId = await withTransaction(async (client) => {
+    const result = await client.query(
       `INSERT INTO collections
         (id, customer_pk, loan_pk, status, amount, due_amount, penalty_amount, total_payable,
          payment_type, pay_mode, receipt_number, due_date, installment_number,
-         staff_name, location, remarks, overdue_days, grace_days,
-         submitted_at, collected_date, created_at, updated_at)
-       VALUES
-        ('', $customerPk, $loanPk, 'Pending', $amount, $dueAmount, $penaltyAmount, $totalPayable,
-         $paymentType, $payMode, $receiptNumber, $dueDate, $installmentNumber,
-         $staffName, $location, $remarks, $overdueDays, $graceDays,
-         $submittedAt, $collectedDate, $createdAt, $updatedAt)`
-    )
-    .run({
-      $customerPk: customerRow?.pk ?? loanRow.customer_pk,
-      $loanPk: loanRow.pk,
-      $amount: amount,
-      $dueAmount: roundMoney(payload.dueAmount || 0),
-      $penaltyAmount: roundMoney(payload.penaltyAmount || 0),
-      $totalPayable: roundMoney(payload.totalPayable || payload.dueAmount || 0),
-      $paymentType: payload.paymentType || "",
-      $payMode: payload.payMode || payload.paymentMode || "",
-      $receiptNumber: payload.receiptNumber || payload.receiptNo || "",
-      $dueDate: payload.dueDate || "",
-      $installmentNumber: payload.installment ?? payload.installmentNumber ?? null,
-      $staffName: payload.staffName || submittedBy?.name || "",
-      $location: payload.location || "",
-      $remarks: payload.remarks || "",
-      $overdueDays: Number(payload.overdueDays) || 0,
-      $graceDays: Number(payload.graceDays) || 0,
-      $submittedAt: payload.submittedAt || now,
-      $collectedDate: payload.collectedDate || now,
-      $createdAt: now,
-      $updatedAt: now,
-    });
+         staff_name, location, remarks, overdue_days, grace_days, collected_date)
+       VALUES ('', $1, $2, 'Pending', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+       RETURNING pk`,
+      [
+        customerRow?.pk ?? loanRow.customer_pk,
+        loanRow.pk,
+        amount,
+        roundMoney(payload.dueAmount || 0),
+        roundMoney(payload.penaltyAmount || 0),
+        roundMoney(payload.totalPayable || payload.dueAmount || 0),
+        payload.paymentType || "",
+        payload.payMode || payload.paymentMode || "",
+        payload.receiptNumber || payload.receiptNo || "",
+        payload.dueDate || "",
+        payload.installment ?? payload.installmentNumber ?? null,
+        payload.staffName || submittedBy?.name || "",
+        payload.location || "",
+        payload.remarks || "",
+        Number(payload.overdueDays) || 0,
+        Number(payload.graceDays) || 0,
+        payload.collectedDate || new Date().toISOString(),
+      ]
+    );
 
-  const collectionId = `COL-${pad(result.lastInsertRowid)}`;
+    const pk = result.rows[0].pk;
+    const id = `COL-${pad(pk)}`;
 
-  db.prepare("UPDATE collections SET id = $id WHERE pk = $pk").run({
-    $id: collectionId,
-    $pk: result.lastInsertRowid,
+    await client.query("UPDATE collections SET id = $1 WHERE pk = $2", [id, pk]);
+
+    return id;
   });
 
   return getCollectionById(collectionId);
@@ -204,212 +188,196 @@ const CLOSED_LOAN_STATUSES = new Set(["closed", "paid", "settled", "completed", 
 
 /*
  * The one path that actually moves money.
+ *
+ * The collection and its loan are locked with SELECT ... FOR UPDATE for the
+ * whole transaction, so two admins approving at the same moment cannot both
+ * read the same installment balances and double-post.
  */
-export const approveCollection = (collectionId, approvedBy) => {
-  const collectionRow = getCollectionRow(collectionId);
-
-  if (!collectionRow) {
-    throw new CollectionError("Collection not found.", 404);
-  }
-
-  if (collectionRow.status !== COLLECTION_STATUS.PENDING) {
-    throw new CollectionError(
-      `Only pending collections can be approved (this one is ${collectionRow.status}).`,
-      409
-    );
-  }
-
-  // Idempotency guard: a collection may never post twice.
-  const alreadyPosted = db
-    .prepare("SELECT COUNT(*) AS count FROM payment_allocations WHERE collection_pk = $pk")
-    .get({ $pk: collectionRow.pk });
-
-  if (alreadyPosted.count > 0) {
-    throw new CollectionError("This collection has already been processed.", 409);
-  }
-
-  const loanRow = db
-    .prepare("SELECT * FROM loans WHERE pk = $pk")
-    .get({ $pk: collectionRow.loan_pk });
-
-  if (!loanRow) {
-    throw new CollectionError("The loan for this collection no longer exists.", 404);
-  }
-
-  if (CLOSED_LOAN_STATUSES.has(String(loanRow.status || "").toLowerCase())) {
-    throw new CollectionError(`Loan is ${loanRow.status} — it cannot take further payments.`, 409);
-  }
-
-  const referenceDate = new Date();
-  const now = nowIso();
-
-  const installments = getInstallmentRows(loanRow.pk).map((row) =>
-    describeInstallment(row, referenceDate)
-  );
-
-  const allocation = buildAllocation({
-    installments,
-    paymentAmount: collectionRow.amount,
-    penaltyAmount: collectionRow.penalty_amount,
-    referenceDate,
-  });
-
-  const updated = applyAllocation({ installments, items: allocation.items, referenceDate });
-  const outstanding = summariseOutstanding(updated);
-  const loanStatus = deriveLoanStatus(updated, referenceDate);
-  const paymentType = derivePaymentType(allocation, installments, referenceDate);
-
-  db.exec("BEGIN");
-
-  try {
-    const updateInstallment = db.prepare(
-      `UPDATE installments SET
-        paid_principal = $paidPrincipal,
-        paid_interest = $paidInterest,
-        penalty_paid_amount = $penaltyPaidAmount,
-        status = $status
-       WHERE loan_pk = $loanPk AND installment_number = $installmentNumber`
+export const approveCollection = async (collectionId, approvedBy) => {
+  const outcome = await withTransaction(async (client) => {
+    const collectionResult = await client.query(
+      "SELECT * FROM collections WHERE id = $1 FOR UPDATE",
+      [collectionId]
     );
 
-    for (const installment of updated) {
-      updateInstallment.run({
-        $loanPk: loanRow.pk,
-        $installmentNumber: installment.installmentNumber,
-        $paidPrincipal: installment.paidPrincipal,
-        $paidInterest: installment.paidInterest,
-        $penaltyPaidAmount: installment.penaltyPaidAmount,
-        $status: installment.status,
-      });
+    const collectionRow = collectionResult.rows[0];
+
+    if (!collectionRow) {
+      throw new CollectionError("Collection not found.", 404);
     }
 
-    const insertAllocation = db.prepare(
-      `INSERT INTO payment_allocations
-        (id, loan_pk, collection_pk, installment_number, due_date, amount, type,
-         is_penalty, is_interest, is_principal, created_at)
-       VALUES
-        ('', $loanPk, $collectionPk, $installmentNumber, $dueDate, $amount, $type,
-         $isPenalty, $isInterest, $isPrincipal, $createdAt)`
+    if (collectionRow.status !== COLLECTION_STATUS.PENDING) {
+      throw new CollectionError(
+        `Only pending collections can be approved (this one is ${collectionRow.status}).`,
+        409
+      );
+    }
+
+    // Idempotency guard: a collection may never post twice.
+    const posted = await client.query(
+      "SELECT COUNT(*)::int AS count FROM payment_allocations WHERE collection_pk = $1",
+      [collectionRow.pk]
     );
 
-    allocation.items.forEach((item, index) => {
-      const result = insertAllocation.run({
-        $loanPk: loanRow.pk,
-        $collectionPk: collectionRow.pk,
-        $installmentNumber: item.installmentNumber,
-        $dueDate: item.dueDate || "",
-        $amount: item.amount,
-        $type: item.type,
-        $isPenalty: item.isPenalty ? 1 : 0,
-        $isInterest: item.isInterest ? 1 : 0,
-        $isPrincipal: item.isPrincipal ? 1 : 0,
-        $createdAt: now,
-      });
+    if (posted.rows[0].count > 0) {
+      throw new CollectionError("This collection has already been processed.", 409);
+    }
 
-      db.prepare("UPDATE payment_allocations SET id = $id WHERE pk = $pk").run({
-        $id: `PAY-${collectionRow.id}-${index + 1}`,
-        $pk: result.lastInsertRowid,
-      });
+    const loanResult = await client.query("SELECT * FROM loans WHERE pk = $1 FOR UPDATE", [
+      collectionRow.loan_pk,
+    ]);
+
+    const loanRow = loanResult.rows[0];
+
+    if (!loanRow) {
+      throw new CollectionError("The loan for this collection no longer exists.", 404);
+    }
+
+    if (CLOSED_LOAN_STATUSES.has(String(loanRow.status || "").toLowerCase())) {
+      throw new CollectionError(
+        `Loan is ${loanRow.status}; it cannot take further payments.`,
+        409
+      );
+    }
+
+    const referenceDate = new Date();
+
+    const installmentResult = await client.query(
+      "SELECT * FROM installments WHERE loan_pk = $1 ORDER BY installment_number ASC",
+      [loanRow.pk]
+    );
+
+    const installments = installmentResult.rows.map((row) =>
+      describeInstallment(row, referenceDate)
+    );
+
+    const allocation = buildAllocation({
+      installments,
+      paymentAmount: collectionRow.amount,
+      penaltyAmount: collectionRow.penalty_amount,
+      referenceDate,
     });
 
-    db.prepare(
-      `UPDATE loans SET
-        status = $status,
-        repayment_meta_json = $repaymentMetaJson,
-        updated_at = $updatedAt
-       WHERE pk = $pk`
-    ).run({
-      $pk: loanRow.pk,
-      $status: loanStatus,
-      $repaymentMetaJson: JSON.stringify({
-        repaymentMeta: {
-          lastPaymentAt: now,
-          lastPaymentAmount: collectionRow.amount,
-          lastPaymentType: paymentType,
-          lastPenaltyPaid: allocation.penalty,
-          lastInterestPaid: allocation.interest,
-          lastPrincipalPaid: allocation.principal,
-          outstanding: outstanding.outstanding,
-          principalOutstanding: outstanding.principalOutstanding,
-          interestOutstanding: outstanding.interestOutstanding,
-        },
-      }),
-      $updatedAt: now,
-    });
+    const updated = applyAllocation({ installments, items: allocation.items, referenceDate });
+    const outstanding = summariseOutstanding(updated);
+    const loanStatus = deriveLoanStatus(updated, referenceDate);
+    const paymentType = derivePaymentType(allocation, installments, referenceDate);
 
-    db.prepare(
+    for (const installment of updated) {
+      await client.query(
+        `UPDATE installments SET
+          paid_principal = $3, paid_interest = $4, penalty_paid_amount = $5, status = $6
+         WHERE loan_pk = $1 AND installment_number = $2`,
+        [
+          loanRow.pk,
+          installment.installmentNumber,
+          installment.paidPrincipal,
+          installment.paidInterest,
+          installment.penaltyPaidAmount,
+          installment.status,
+        ]
+      );
+    }
+
+    for (const [index, item] of allocation.items.entries()) {
+      await client.query(
+        `INSERT INTO payment_allocations
+          (id, loan_pk, collection_pk, installment_number, due_date, amount, type,
+           is_penalty, is_interest, is_principal)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          `PAY-${collectionRow.id}-${index + 1}`,
+          loanRow.pk,
+          collectionRow.pk,
+          item.installmentNumber,
+          item.dueDate || "",
+          item.amount,
+          item.type,
+          Boolean(item.isPenalty),
+          Boolean(item.isInterest),
+          Boolean(item.isPrincipal),
+        ]
+      );
+    }
+
+    await client.query(
+      "UPDATE loans SET status = $2, repayment_meta = $3, updated_at = now() WHERE pk = $1",
+      [
+        loanRow.pk,
+        loanStatus,
+        JSON.stringify({
+          repaymentMeta: {
+            lastPaymentAt: referenceDate.toISOString(),
+            lastPaymentAmount: collectionRow.amount,
+            lastPaymentType: paymentType,
+            lastPenaltyPaid: allocation.penalty,
+            lastInterestPaid: allocation.interest,
+            lastPrincipalPaid: allocation.principal,
+            outstanding: outstanding.outstanding,
+            principalOutstanding: outstanding.principalOutstanding,
+            interestOutstanding: outstanding.interestOutstanding,
+          },
+        }),
+      ]
+    );
+
+    await client.query(
       `UPDATE collections SET
-        status = 'Approved',
-        approved_at = $approvedAt,
-        approved_by = $approvedBy,
-        payment_type = $paymentType,
-        amount_toward_due = $amountTowardDue,
-        amount_toward_penalty = $amountTowardPenalty,
-        amount_toward_principal = $amountTowardPrincipal,
-        amount_toward_advance = $amountTowardAdvance,
-        amount_excess = $amountExcess,
-        allocation_json = $allocationJson,
-        repayment_processed = 1,
-        repayment_processed_at = $processedAt,
-        repayment_processing_status = 'Processed',
-        repayment_error = NULL,
-        updated_at = $updatedAt
-       WHERE pk = $pk`
-    ).run({
-      $pk: collectionRow.pk,
-      $approvedAt: now,
-      $approvedBy: approvedBy?.username || "",
-      $paymentType: paymentType,
-      $amountTowardDue: roundMoney(allocation.interest + allocation.principal - allocation.advance),
-      $amountTowardPenalty: allocation.penalty,
-      $amountTowardPrincipal: allocation.principal,
-      $amountTowardAdvance: allocation.advance,
-      $amountExcess: allocation.excess,
-      $allocationJson: JSON.stringify(allocation),
-      $processedAt: now,
-      $updatedAt: now,
-    });
+        status = 'Approved', approved_at = now(), approved_by = $2, payment_type = $3,
+        amount_toward_due = $4, amount_toward_penalty = $5, amount_toward_principal = $6,
+        amount_toward_advance = $7, amount_excess = $8, allocation = $9,
+        repayment_processed = true, repayment_processed_at = now(),
+        repayment_processing_status = 'Processed', repayment_error = NULL, updated_at = now()
+       WHERE pk = $1`,
+      [
+        collectionRow.pk,
+        approvedBy?.username || "",
+        paymentType,
+        roundMoney(allocation.interest + allocation.principal - allocation.advance),
+        allocation.penalty,
+        allocation.principal,
+        allocation.advance,
+        allocation.excess,
+        JSON.stringify(allocation),
+      ]
+    );
 
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
+    return { loanPk: loanRow.pk, allocation };
+  });
+
+  const loanResult = await query("SELECT * FROM loans WHERE pk = $1", [outcome.loanPk]);
 
   return {
-    collection: getCollectionById(collectionId),
-    loan: buildLoan(db.prepare("SELECT * FROM loans WHERE pk = $pk").get({ $pk: loanRow.pk })),
-    allocation,
+    collection: await getCollectionById(collectionId),
+    loan: await buildLoan(loanResult.rows[0]),
+    allocation: outcome.allocation,
   };
 };
 
-export const rejectCollection = (collectionId, { remarks = "", rejectedBy } = {}) => {
-  const row = getCollectionRow(collectionId);
+export const rejectCollection = async (collectionId, { remarks = "", rejectedBy } = {}) => {
+  await withTransaction(async (client) => {
+    const result = await client.query(
+      "SELECT * FROM collections WHERE id = $1 FOR UPDATE",
+      [collectionId]
+    );
 
-  if (!row) {
-    throw new CollectionError("Collection not found.", 404);
-  }
+    const row = result.rows[0];
 
-  if (row.status !== COLLECTION_STATUS.PENDING) {
-    throw new CollectionError("Only pending collections can be rejected.", 409);
-  }
+    if (!row) {
+      throw new CollectionError("Collection not found.", 404);
+    }
 
-  const now = nowIso();
+    if (row.status !== COLLECTION_STATUS.PENDING) {
+      throw new CollectionError("Only pending collections can be rejected.", 409);
+    }
 
-  db.prepare(
-    `UPDATE collections SET
-      status = 'Rejected',
-      rejected_at = $rejectedAt,
-      rejected_by = $rejectedBy,
-      rejection_remarks = $remarks,
-      repayment_processing_status = 'Rejected',
-      updated_at = $updatedAt
-     WHERE pk = $pk`
-  ).run({
-    $pk: row.pk,
-    $rejectedAt: now,
-    $rejectedBy: rejectedBy?.username || "",
-    $remarks: remarks,
-    $updatedAt: now,
+    await client.query(
+      `UPDATE collections SET
+        status = 'Rejected', rejected_at = now(), rejected_by = $2, rejection_remarks = $3,
+        repayment_processing_status = 'Rejected', updated_at = now()
+       WHERE pk = $1`,
+      [row.pk, rejectedBy?.username || "", remarks]
+    );
   });
 
   return getCollectionById(collectionId);
@@ -417,115 +385,98 @@ export const rejectCollection = (collectionId, { remarks = "", rejectedBy } = {}
 
 /*
  * Reversing an approved collection unwinds its postings: the allocation
- * rows are removed and the affected installments are recomputed from what
+ * rows are removed and the affected installments recomputed from what
  * remains, so the loan returns to its pre-approval state.
  */
-export const reverseCollection = (collectionId, { reason = "", reversedBy } = {}) => {
-  const row = getCollectionRow(collectionId);
-
-  if (!row) {
-    throw new CollectionError("Collection not found.", 404);
-  }
-
-  if (row.status !== COLLECTION_STATUS.APPROVED) {
-    throw new CollectionError("Only approved collections can be reversed.", 409);
-  }
-
-  const now = nowIso();
-  const referenceDate = new Date();
-
-  db.exec("BEGIN");
-
-  try {
-    const postings = db
-      .prepare("SELECT * FROM payment_allocations WHERE collection_pk = $pk")
-      .all({ $pk: row.pk });
-
-    const updateInstallment = db.prepare(
-      `UPDATE installments SET
-        paid_principal = MAX(paid_principal - $principal, 0),
-        paid_interest = MAX(paid_interest - $interest, 0),
-        penalty_paid_amount = MAX(penalty_paid_amount - $penalty, 0)
-       WHERE loan_pk = $loanPk AND installment_number = $installmentNumber`
+export const reverseCollection = async (collectionId, { reason = "", reversedBy } = {}) => {
+  await withTransaction(async (client) => {
+    const result = await client.query(
+      "SELECT * FROM collections WHERE id = $1 FOR UPDATE",
+      [collectionId]
     );
 
-    for (const posting of postings) {
+    const row = result.rows[0];
+
+    if (!row) {
+      throw new CollectionError("Collection not found.", 404);
+    }
+
+    if (row.status !== COLLECTION_STATUS.APPROVED) {
+      throw new CollectionError("Only approved collections can be reversed.", 409);
+    }
+
+    await client.query("SELECT pk FROM loans WHERE pk = $1 FOR UPDATE", [row.loan_pk]);
+
+    const postings = await client.query(
+      "SELECT * FROM payment_allocations WHERE collection_pk = $1",
+      [row.pk]
+    );
+
+    for (const posting of postings.rows) {
       if (posting.installment_number == null) {
         continue;
       }
 
-      updateInstallment.run({
-        $loanPk: row.loan_pk,
-        $installmentNumber: posting.installment_number,
-        $principal: posting.is_principal ? posting.amount : 0,
-        $interest: posting.is_interest ? posting.amount : 0,
-        $penalty: posting.is_penalty ? posting.amount : 0,
-      });
+      await client.query(
+        `UPDATE installments SET
+          paid_principal = GREATEST(paid_principal - $3, 0),
+          paid_interest = GREATEST(paid_interest - $4, 0),
+          penalty_paid_amount = GREATEST(penalty_paid_amount - $5, 0)
+         WHERE loan_pk = $1 AND installment_number = $2`,
+        [
+          row.loan_pk,
+          posting.installment_number,
+          posting.is_principal ? posting.amount : 0,
+          posting.is_interest ? posting.amount : 0,
+          posting.is_penalty ? posting.amount : 0,
+        ]
+      );
     }
 
-    db.prepare("DELETE FROM payment_allocations WHERE collection_pk = $pk").run({ $pk: row.pk });
+    await client.query("DELETE FROM payment_allocations WHERE collection_pk = $1", [row.pk]);
 
-    // Recompute installment statuses and the loan status from what is left.
-    const refreshed = getInstallmentRows(row.loan_pk).map((installment) =>
+    const referenceDate = new Date();
+
+    const refreshedResult = await client.query(
+      "SELECT * FROM installments WHERE loan_pk = $1 ORDER BY installment_number ASC",
+      [row.loan_pk]
+    );
+
+    const refreshed = refreshedResult.rows.map((installment) =>
       describeInstallment(installment, referenceDate)
     );
 
-    const updateStatus = db.prepare(
-      "UPDATE installments SET status = $status WHERE loan_pk = $loanPk AND installment_number = $installmentNumber"
-    );
-
     for (const installment of refreshed) {
-      updateStatus.run({
-        $loanPk: row.loan_pk,
-        $installmentNumber: installment.installmentNumber,
-        $status: installment.status,
-      });
+      await client.query(
+        "UPDATE installments SET status = $3 WHERE loan_pk = $1 AND installment_number = $2",
+        [row.loan_pk, installment.installmentNumber, installment.status]
+      );
     }
 
-    db.prepare("UPDATE loans SET status = $status, updated_at = $updatedAt WHERE pk = $pk").run({
-      $pk: row.loan_pk,
-      $status: deriveLoanStatus(refreshed, referenceDate),
-      $updatedAt: now,
-    });
+    await client.query("UPDATE loans SET status = $2, updated_at = now() WHERE pk = $1", [
+      row.loan_pk,
+      deriveLoanStatus(refreshed, referenceDate),
+    ]);
 
-    db.prepare(
+    await client.query(
       `UPDATE collections SET
-        status = 'Reversed',
-        reversed_at = $reversedAt,
-        reversed_by = $reversedBy,
-        reversal_reason = $reason,
-        repayment_processed = 0,
-        repayment_processing_status = 'Pending',
-        updated_at = $updatedAt
-       WHERE pk = $pk`
-    ).run({
-      $pk: row.pk,
-      $reversedAt: now,
-      $reversedBy: reversedBy?.username || "",
-      $reason: reason,
-      $updatedAt: now,
-    });
-
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
+        status = 'Reversed', reversed_at = now(), reversed_by = $2, reversal_reason = $3,
+        repayment_processed = false, repayment_processing_status = 'Pending', updated_at = now()
+       WHERE pk = $1`,
+      [row.pk, reversedBy?.username || "", reason]
+    );
+  });
 
   return getCollectionById(collectionId);
 };
 
-export const getCollectionsForLoan = (loanId) => {
-  const loanRow = getLoanRowById(loanId);
+export const getCollectionsForLoan = async (loanId) => {
+  const result = await query(
+    `${SELECT_COLLECTIONS} WHERE loans.id = $1 ORDER BY collections.pk DESC`,
+    [loanId]
+  );
 
-  if (!loanRow) {
-    return [];
-  }
-
-  return db
-    .prepare(`${SELECT_COLLECTIONS} WHERE collections.loan_pk = $pk ORDER BY collections.pk DESC`)
-    .all({ $pk: loanRow.pk })
-    .map(hydrate);
+  return result.rows.map(mapCollection);
 };
 
 export { CollectionError };

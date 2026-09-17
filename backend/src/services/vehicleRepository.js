@@ -1,17 +1,11 @@
 // src/services/vehicleRepository.js
 //
 // Vehicle lifecycle: ACTIVE -> SEIZED -> (RELEASED | PENDING_SALE -> SOLD).
-// The transition guards mirror the rules the frontend enforced in
-// customerStorage.js / vehicleStorage.js, now enforced server-side where
-// they cannot be bypassed.
+// The transition guards mirror the rules the frontend used to enforce,
+// now applied server-side where they cannot be bypassed.
 
-import { db } from "../db/connection.js";
-import {
-  buildCustomerRecord,
-  buildLoan,
-  getCustomerRow,
-  mapVehicle,
-} from "./customerRepository.js";
+import { query, withTransaction } from "../db/connection.js";
+import { buildCustomerRecord, buildLoan, mapVehicle } from "./customerRepository.js";
 
 export const VEHICLE_STATUS = {
   ACTIVE: "ACTIVE",
@@ -21,49 +15,53 @@ export const VEHICLE_STATUS = {
   SOLD: "SOLD",
 };
 
-const nowIso = () => new Date().toISOString();
-
 const pad = (number, length = 4) => String(number).padStart(length, "0");
 
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
+const nowIso = () => new Date().toISOString();
+
 class TransitionError extends Error {
-  constructor(message) {
+  constructor(message, statusCode = 409) {
     super(message);
     this.name = "TransitionError";
-    this.statusCode = 409;
+    this.statusCode = statusCode;
   }
 }
 
-const getVehicleRow = (vehicleId) =>
-  db.prepare("SELECT * FROM vehicles WHERE id = $id").get({ $id: vehicleId });
+const getVehicleRow = async (vehicleId) => {
+  const result = await query("SELECT * FROM vehicles WHERE id = $1", [vehicleId]);
 
-const getLoanRowForVehicle = (vehiclePk) =>
-  db
-    .prepare("SELECT * FROM loans WHERE vehicle_pk = $pk ORDER BY is_primary DESC, pk ASC LIMIT 1")
-    .get({ $pk: vehiclePk });
+  return result.rows[0];
+};
 
-const getCustomerRowByPk = (customerPk) =>
-  db.prepare("SELECT * FROM customers WHERE pk = $pk").get({ $pk: customerPk });
+const getLoanRowForVehicle = async (vehiclePk) => {
+  const result = await query(
+    "SELECT * FROM loans WHERE vehicle_pk = $1 ORDER BY is_primary DESC, pk ASC LIMIT 1",
+    [vehiclePk]
+  );
+
+  return result.rows[0];
+};
 
 /*
  * Vehicle view enriched with the customer/loan context the vehicle pages
  * display alongside it.
  */
-const decorateVehicle = (vehicleRow) => {
-  const customerRow = getCustomerRowByPk(vehicleRow.customer_pk);
-  const loanRow = getLoanRowForVehicle(vehicleRow.pk);
-  const loan = loanRow ? buildLoan(loanRow) : {};
+const decorateVehicle = async (vehicleRow) => {
+  const [customerResult, loanRow, rcResult] = await Promise.all([
+    query("SELECT * FROM customers WHERE pk = $1", [vehicleRow.customer_pk]),
+    getLoanRowForVehicle(vehicleRow.pk),
+    query("SELECT * FROM rc_details WHERE vehicle_pk = $1", [vehicleRow.pk]),
+  ]);
 
-  const personal = customerRow ? JSON.parse(customerRow.personal_json || "{}") : {};
-
-  const rcRow = db
-    .prepare("SELECT * FROM rc_details WHERE vehicle_pk = $pk")
-    .get({ $pk: vehicleRow.pk });
+  const customerRow = customerResult.rows[0];
+  const loan = loanRow ? await buildLoan(loanRow) : {};
+  const personal = customerRow?.personal ?? {};
 
   return {
     ...mapVehicle(vehicleRow),
-    registrationNumber: rcRow?.registration_number || "",
+    registrationNumber: rcResult.rows[0]?.registration_number || "",
     customerId: customerRow?.id || "",
     customerNumber: customerRow?.customer_number || "",
     customerName: personal.name || "",
@@ -75,134 +73,114 @@ const decorateVehicle = (vehicleRow) => {
   };
 };
 
-export const getVehicles = () =>
-  db.prepare("SELECT * FROM vehicles ORDER BY pk ASC").all().map(decorateVehicle);
+export const getVehicles = async () => {
+  const result = await query("SELECT * FROM vehicles ORDER BY pk ASC");
 
-export const getVehicleById = (vehicleId) => {
-  const row = getVehicleRow(vehicleId);
+  return Promise.all(result.rows.map(decorateVehicle));
+};
+
+export const getVehicleById = async (vehicleId) => {
+  const row = await getVehicleRow(vehicleId);
 
   return row ? decorateVehicle(row) : null;
 };
 
-export const getVehiclesByStatus = (status) =>
-  db
-    .prepare("SELECT * FROM vehicles WHERE status = $status ORDER BY pk ASC")
-    .all({ $status: status })
-    .map(decorateVehicle);
+export const getVehiclesByStatus = async (status) => {
+  const result = await query("SELECT * FROM vehicles WHERE status = $1 ORDER BY pk ASC", [status]);
 
-export const getVehicleEvents = (vehicleId) => {
-  const row = getVehicleRow(vehicleId);
+  return Promise.all(result.rows.map(decorateVehicle));
+};
+
+export const getVehicleEvents = async (vehicleId) => {
+  const row = await getVehicleRow(vehicleId);
 
   if (!row) {
     return [];
   }
 
-  return db
-    .prepare("SELECT * FROM vehicle_events WHERE vehicle_pk = $pk ORDER BY pk ASC")
-    .all({ $pk: row.pk })
-    .map((event) => ({
-      id: event.id,
-      vehicleId,
-      type: event.event_type,
-      fromStatus: event.from_status,
-      toStatus: event.to_status,
-      performedBy: event.performed_by || "",
-      createdAt: event.created_at,
-      ...JSON.parse(event.details_json || "{}"),
-    }));
+  const result = await query(
+    "SELECT * FROM vehicle_events WHERE vehicle_pk = $1 ORDER BY pk ASC",
+    [row.pk]
+  );
+
+  return result.rows.map((event) => ({
+    id: event.id,
+    vehicleId,
+    type: event.event_type,
+    fromStatus: event.from_status,
+    toStatus: event.to_status,
+    performedBy: event.performed_by || "",
+    createdAt: new Date(event.created_at).toISOString(),
+    ...(event.details ?? {}),
+  }));
 };
 
-const recordEvent = ({ vehiclePk, type, fromStatus, toStatus, details, performedBy, now }) => {
-  const result = db
-    .prepare(
-      `INSERT INTO vehicle_events
-        (id, vehicle_pk, event_type, from_status, to_status, details_json, performed_by, created_at)
-       VALUES ('', $vehiclePk, $type, $fromStatus, $toStatus, $detailsJson, $performedBy, $createdAt)`
-    )
-    .run({
-      $vehiclePk: vehiclePk,
-      $type: type,
-      $fromStatus: fromStatus,
-      $toStatus: toStatus,
-      $detailsJson: JSON.stringify(details || {}),
-      $performedBy: performedBy || "",
-      $createdAt: now,
-    });
+const recordEvent = async (client, { vehiclePk, type, fromStatus, toStatus, details, performedBy }) => {
+  const result = await client.query(
+    `INSERT INTO vehicle_events
+      (id, vehicle_pk, event_type, from_status, to_status, details, performed_by)
+     VALUES ('', $1, $2, $3, $4, $5, $6)
+     RETURNING pk`,
+    [vehiclePk, type, fromStatus, toStatus, JSON.stringify(details || {}), performedBy || ""]
+  );
 
-  db.prepare("UPDATE vehicle_events SET id = $id WHERE pk = $pk").run({
-    $id: `VEV-${pad(result.lastInsertRowid, 5)}`,
-    $pk: result.lastInsertRowid,
-  });
+  const pk = result.rows[0].pk;
+
+  await client.query("UPDATE vehicle_events SET id = $1 WHERE pk = $2", [`VEV-${pad(pk, 5)}`, pk]);
 };
 
-const requireVehicle = (vehicleId) => {
-  const row = getVehicleRow(vehicleId);
+const requireVehicle = async (vehicleId) => {
+  const row = await getVehicleRow(vehicleId);
 
   if (!row) {
-    const error = new TransitionError("Vehicle not found.");
-    error.statusCode = 404;
-    throw error;
+    throw new TransitionError("Vehicle not found.", 404);
   }
 
   return row;
 };
 
-const transition = ({
+/*
+ * Shared transition machinery: check the current status is allowed to
+ * move, write the new status plus its detail column, and append a history
+ * event — all in one transaction.
+ */
+const transition = async ({
   vehicleId,
   allowedFrom,
   toStatus,
   eventType,
   details,
   performedBy,
-  columns = {},
+  detailColumn,
+  detailValue,
   onCommit,
   errorMessage,
 }) => {
-  const vehicleRow = requireVehicle(vehicleId);
+  const vehicleRow = await requireVehicle(vehicleId);
 
   if (!allowedFrom.includes(vehicleRow.status)) {
     throw new TransitionError(errorMessage);
   }
 
-  const now = nowIso();
+  await withTransaction(async (client) => {
+    await client.query(
+      `UPDATE vehicles SET status = $2, ${detailColumn} = $3, updated_at = now() WHERE pk = $1`,
+      [vehicleRow.pk, toStatus, JSON.stringify(detailValue)]
+    );
 
-  db.exec("BEGIN");
-
-  try {
-    const assignments = Object.keys(columns)
-      .map((column) => `${column} = $${column}`)
-      .join(", ");
-
-    db.prepare(
-      `UPDATE vehicles SET status = $status, updated_at = $updatedAt${
-        assignments ? `, ${assignments}` : ""
-      } WHERE pk = $pk`
-    ).run({
-      $pk: vehicleRow.pk,
-      $status: toStatus,
-      $updatedAt: now,
-      ...Object.fromEntries(
-        Object.entries(columns).map(([column, value]) => [`$${column}`, value])
-      ),
-    });
-
-    recordEvent({
+    await recordEvent(client, {
       vehiclePk: vehicleRow.pk,
       type: eventType,
       fromStatus: vehicleRow.status,
       toStatus,
       details,
       performedBy,
-      now,
     });
 
-    onCommit?.({ vehicleRow, now });
-
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
+    if (onCommit) {
+      await onCommit(client);
+    }
+  });
 
   return getVehicleById(vehicleId);
 };
@@ -217,13 +195,12 @@ export const seizeVehicle = (vehicleId, details = {}, performedBy) => {
     eventType: "SEIZURE",
     details,
     performedBy,
-    columns: {
-      seizure_json: JSON.stringify({
-        ...details,
-        seizureDate: details.seizureDate || now,
-        seizedBy: performedBy || details.seizedBy || "",
-        updatedAt: now,
-      }),
+    detailColumn: "seizure",
+    detailValue: {
+      ...details,
+      seizureDate: details.seizureDate || now,
+      seizedBy: performedBy || details.seizedBy || "",
+      updatedAt: now,
     },
     errorMessage: "Only an active vehicle can be seized.",
   });
@@ -239,13 +216,12 @@ export const releaseVehicle = (vehicleId, details = {}, performedBy) => {
     eventType: "RELEASE",
     details,
     performedBy,
-    columns: {
-      release_json: JSON.stringify({
-        ...details,
-        releaseDate: details.releaseDate || now,
-        releasedBy: performedBy || details.releasedBy || "",
-        updatedAt: now,
-      }),
+    detailColumn: "release",
+    detailValue: {
+      ...details,
+      releaseDate: details.releaseDate || now,
+      releasedBy: performedBy || details.releasedBy || "",
+      updatedAt: now,
     },
     errorMessage: "Only a seized vehicle can be released.",
   });
@@ -261,22 +237,20 @@ export const moveVehicleToPendingSale = (vehicleId, details = {}, performedBy) =
     eventType: "PENDING_SALE",
     details,
     performedBy,
-    columns: {
-      sale_json: JSON.stringify({
-        ...details,
-        saleStatus: "PENDING_SALE",
-        initiatedAt: details.initiatedAt || now,
-        updatedAt: now,
-      }),
+    detailColumn: "sale",
+    detailValue: {
+      ...details,
+      saleStatus: "PENDING_SALE",
+      initiatedAt: details.initiatedAt || now,
+      updatedAt: now,
     },
     errorMessage: "Only a seized vehicle can be moved to pending sale.",
   });
 };
 
-export const cancelVehicleSale = (vehicleId, reason = "", performedBy) => {
+export const cancelVehicleSale = async (vehicleId, reason = "", performedBy) => {
   const now = nowIso();
-  const vehicleRow = requireVehicle(vehicleId);
-  const existingSale = JSON.parse(vehicleRow.sale_json || "{}");
+  const vehicleRow = await requireVehicle(vehicleId);
 
   return transition({
     vehicleId,
@@ -285,29 +259,27 @@ export const cancelVehicleSale = (vehicleId, reason = "", performedBy) => {
     eventType: "SALE_CANCELLED",
     details: { reason },
     performedBy,
-    columns: {
-      sale_json: JSON.stringify({
-        ...existingSale,
-        saleStatus: "CANCELLED",
-        cancellationReason: reason,
-        cancelledAt: now,
-        updatedAt: now,
-      }),
+    detailColumn: "sale",
+    detailValue: {
+      ...(vehicleRow.sale ?? {}),
+      saleStatus: "CANCELLED",
+      cancellationReason: reason,
+      cancelledAt: now,
+      updatedAt: now,
     },
     errorMessage: "Only a pending-sale vehicle can have its sale cancelled.",
   });
 };
 
 /*
- * Completing a sale also forecloses the linked loan — the recovery figures
- * are computed from the loan's real outstanding, not a client-supplied one.
+ * Completing a sale also forecloses the linked loan. Recovery figures are
+ * computed from the loan's real outstanding, not a client-supplied one.
  */
-export const completeVehicleSale = (vehicleId, details = {}, performedBy) => {
+export const completeVehicleSale = async (vehicleId, details = {}, performedBy) => {
   const now = nowIso();
-  const vehicleRow = requireVehicle(vehicleId);
-  const existingSale = JSON.parse(vehicleRow.sale_json || "{}");
-  const loanRow = getLoanRowForVehicle(vehicleRow.pk);
-  const loan = loanRow ? buildLoan(loanRow) : null;
+  const vehicleRow = await requireVehicle(vehicleId);
+  const loanRow = await getLoanRowForVehicle(vehicleRow.pk);
+  const loan = loanRow ? await buildLoan(loanRow) : null;
 
   const salePrice = roundMoney(details.salePrice || 0);
   const saleExpenses = roundMoney(details.saleExpenses || 0);
@@ -323,48 +295,40 @@ export const completeVehicleSale = (vehicleId, details = {}, performedBy) => {
     eventType: "SALE",
     details: { ...details, salePrice, saleExpenses, netSaleProceeds, deficiency, surplus },
     performedBy,
-    columns: {
-      sale_json: JSON.stringify({
-        ...existingSale,
-        ...details,
-        saleStatus: "SOLD",
-        salePrice,
-        saleExpenses,
-        outstandingAmount,
-        netSaleProceeds,
-        deficiency,
-        surplus,
-        soldAt: details.soldAt || now,
-        soldBy: performedBy || details.soldBy || "",
-        updatedAt: now,
-      }),
+    detailColumn: "sale",
+    detailValue: {
+      ...(vehicleRow.sale ?? {}),
+      ...details,
+      saleStatus: "SOLD",
+      salePrice,
+      saleExpenses,
+      outstandingAmount,
+      netSaleProceeds,
+      deficiency,
+      surplus,
+      soldAt: details.soldAt || now,
+      soldBy: performedBy || details.soldBy || "",
+      updatedAt: now,
     },
-    onCommit: () => {
+    onCommit: async (client) => {
       if (!loanRow) {
         return;
       }
 
-      db.prepare(
+      await client.query(
         `UPDATE loans SET
-          status = 'Foreclosed',
-          foreclosure_status = 'Foreclosed',
-          foreclosed_at = $foreclosedAt,
-          foreclosure_reason = $reason,
-          updated_at = $updatedAt
-         WHERE pk = $pk`
-      ).run({
-        $pk: loanRow.pk,
-        $foreclosedAt: now,
-        $reason: "Vehicle sold",
-        $updatedAt: now,
-      });
+          status = 'Foreclosed', foreclosure_status = 'Foreclosed',
+          foreclosed_at = now(), foreclosure_reason = $2, updated_at = now()
+         WHERE pk = $1`,
+        [loanRow.pk, "Vehicle sold"]
+      );
     },
     errorMessage: "Only a vehicle pending sale can be marked as sold.",
   });
 };
 
-export const getVehicleStatusCounts = () => {
-  const rows = db.prepare("SELECT status, COUNT(*) AS count FROM vehicles GROUP BY status").all();
+export const getVehicleStatusCounts = async () => {
+  const result = await query("SELECT status, COUNT(*)::int AS count FROM vehicles GROUP BY status");
 
   const counts = { total: 0, active: 0, seized: 0, pendingSale: 0, released: 0, sold: 0 };
 
@@ -376,7 +340,7 @@ export const getVehicleStatusCounts = () => {
     SOLD: "sold",
   };
 
-  for (const row of rows) {
+  for (const row of result.rows) {
     counts.total += row.count;
     counts[keys[row.status]] = row.count;
   }
@@ -384,17 +348,16 @@ export const getVehicleStatusCounts = () => {
   return counts;
 };
 
-export const getCustomerForVehicle = (vehicleId) => {
-  const vehicleRow = getVehicleRow(vehicleId);
+export const getCustomerForVehicle = async (vehicleId) => {
+  const vehicleRow = await getVehicleRow(vehicleId);
 
   if (!vehicleRow) {
     return null;
   }
 
-  const customerRow = getCustomerRowByPk(vehicleRow.customer_pk);
+  const result = await query("SELECT * FROM customers WHERE pk = $1", [vehicleRow.customer_pk]);
 
-  return customerRow ? buildCustomerRecord(customerRow) : null;
+  return result.rows[0] ? buildCustomerRecord(result.rows[0]) : null;
 };
 
 export { TransitionError };
-export { getCustomerRow };

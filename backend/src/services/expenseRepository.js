@@ -2,21 +2,19 @@
 //
 // Business overhead, unrelated to any customer or loan. The UI treats an
 // expense as a free-form record, so anything beyond the fields that get
-// filtered and summed travels in details_json.
+// filtered and summed travels in the details jsonb column.
 
-import { db } from "../db/connection.js";
+import { query, withTransaction } from "../db/connection.js";
 
 const roundMoney = (value) => {
   const number = Number(value);
 
-  return Number.isFinite(number)
-    ? Math.round((number + Number.EPSILON) * 100) / 100
-    : 0;
+  return Number.isFinite(number) ? Math.round((number + Number.EPSILON) * 100) / 100 : 0;
 };
 
 const pad = (number, length = 4) => String(number).padStart(length, "0");
 
-const nowIso = () => new Date().toISOString();
+const iso = (value) => (value ? new Date(value).toISOString() : "");
 
 const KNOWN_FIELDS = new Set([
   "id",
@@ -39,12 +37,10 @@ const KNOWN_FIELDS = new Set([
 ]);
 
 const extraFields = (expense) =>
-  Object.fromEntries(
-    Object.entries(expense).filter(([key]) => !KNOWN_FIELDS.has(key))
-  );
+  Object.fromEntries(Object.entries(expense).filter(([key]) => !KNOWN_FIELDS.has(key)));
 
 const mapExpense = (row) => ({
-  ...JSON.parse(row.details_json || "{}"),
+  ...(row.details ?? {}),
   id: row.id,
   amount: row.amount,
   status: row.status,
@@ -59,93 +55,81 @@ const mapExpense = (row) => ({
   description: row.description || "",
   remarks: row.remarks || "",
   createdBy: row.created_by || "",
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
+  createdAt: iso(row.created_at),
+  updatedAt: iso(row.updated_at),
 });
 
-const toParams = (expense, now) => ({
-  $amount: roundMoney(expense.amount),
-  $status: expense.status || "Pending",
-  $category: expense.category || "",
-  $subCategory: expense.subCategory || "",
-  $expenseDate: expense.expenseDate || expense.date || now,
-  $paymentMode: expense.paymentMode || "",
-  $paidBy: expense.paidBy || "",
-  $vendor: expense.vendor || "",
-  $reference: expense.reference || "",
-  $description: expense.description || "",
-  $remarks: expense.remarks || "",
-  $detailsJson: JSON.stringify(extraFields(expense)),
-  $createdBy: expense.createdBy || expense.recordedBy || "",
-});
+const toValues = (expense) => [
+  roundMoney(expense.amount),
+  expense.status || "Pending",
+  expense.category || "",
+  expense.subCategory || "",
+  expense.expenseDate || expense.date || new Date().toISOString(),
+  expense.paymentMode || "",
+  expense.paidBy || "",
+  expense.vendor || "",
+  expense.reference || "",
+  expense.description || "",
+  expense.remarks || "",
+  JSON.stringify(extraFields(expense)),
+  expense.createdBy || expense.recordedBy || "",
+];
 
-export const getExpenses = () =>
-  db.prepare("SELECT * FROM expenses ORDER BY pk DESC").all().map(mapExpense);
+export const getExpenses = async () => {
+  const result = await query("SELECT * FROM expenses ORDER BY pk DESC");
 
-export const getExpenseById = (expenseId) => {
-  const row = db.prepare("SELECT * FROM expenses WHERE id = $id").get({ $id: expenseId });
-
-  return row ? mapExpense(row) : null;
+  return result.rows.map(mapExpense);
 };
 
-export const addExpense = (expense = {}) => {
-  const now = nowIso();
+export const getExpenseById = async (expenseId) => {
+  const result = await query("SELECT * FROM expenses WHERE id = $1", [expenseId]);
 
-  const result = db
-    .prepare(
+  return result.rows[0] ? mapExpense(result.rows[0]) : null;
+};
+
+export const addExpense = async (expense = {}) => {
+  const expenseId = await withTransaction(async (client) => {
+    const result = await client.query(
       `INSERT INTO expenses
         (id, amount, status, category, sub_category, expense_date, payment_mode, paid_by,
-         vendor, reference, description, remarks, details_json, created_by, created_at, updated_at)
-       VALUES
-        ('', $amount, $status, $category, $subCategory, $expenseDate, $paymentMode, $paidBy,
-         $vendor, $reference, $description, $remarks, $detailsJson, $createdBy, $createdAt, $updatedAt)`
-    )
-    .run({ ...toParams(expense, now), $createdAt: expense.createdAt || now, $updatedAt: now });
+         vendor, reference, description, remarks, details, created_by)
+       VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       RETURNING pk`,
+      toValues(expense)
+    );
 
-  const id = `EXP-${pad(result.lastInsertRowid)}`;
+    const pk = result.rows[0].pk;
+    const id = `EXP-${pad(pk)}`;
 
-  db.prepare("UPDATE expenses SET id = $id WHERE pk = $pk").run({
-    $id: id,
-    $pk: result.lastInsertRowid,
+    await client.query("UPDATE expenses SET id = $1 WHERE pk = $2", [id, pk]);
+
+    return id;
   });
 
-  return getExpenseById(id);
+  return getExpenseById(expenseId);
 };
 
-export const updateExpense = (expenseId, updates = {}) => {
-  const existing = getExpenseById(expenseId);
+export const updateExpense = async (expenseId, updates = {}) => {
+  const existing = await getExpenseById(expenseId);
 
   if (!existing) {
     return null;
   }
 
-  const now = nowIso();
-  const merged = { ...existing, ...updates };
-
-  db.prepare(
+  await query(
     `UPDATE expenses SET
-      amount = $amount,
-      status = $status,
-      category = $category,
-      sub_category = $subCategory,
-      expense_date = $expenseDate,
-      payment_mode = $paymentMode,
-      paid_by = $paidBy,
-      vendor = $vendor,
-      reference = $reference,
-      description = $description,
-      remarks = $remarks,
-      details_json = $detailsJson,
-      created_by = $createdBy,
-      updated_at = $updatedAt
-     WHERE id = $id`
-  ).run({ ...toParams(merged, now), $id: expenseId, $updatedAt: now });
+      amount = $2, status = $3, category = $4, sub_category = $5, expense_date = $6,
+      payment_mode = $7, paid_by = $8, vendor = $9, reference = $10, description = $11,
+      remarks = $12, details = $13, created_by = $14, updated_at = now()
+     WHERE id = $1`,
+    [expenseId, ...toValues({ ...existing, ...updates })]
+  );
 
   return getExpenseById(expenseId);
 };
 
-export const deleteExpense = (expenseId) => {
-  const result = db.prepare("DELETE FROM expenses WHERE id = $id").run({ $id: expenseId });
+export const deleteExpense = async (expenseId) => {
+  const result = await query("DELETE FROM expenses WHERE id = $1", [expenseId]);
 
-  return result.changes > 0;
+  return result.rowCount > 0;
 };

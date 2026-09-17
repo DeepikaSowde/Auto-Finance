@@ -3,7 +3,6 @@
 import express from "express";
 import cors from "cors";
 
-import { seedUsers } from "./services/auth.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 import { authRouter } from "./routes/auth.js";
 import { customersRouter } from "./routes/customers.js";
@@ -17,8 +16,6 @@ import {
 } from "./routes/finance.js";
 
 export const createApp = () => {
-  seedUsers();
-
   const app = express();
 
   app.use(cors());
@@ -45,6 +42,12 @@ export const createApp = () => {
 
   // eslint-disable-next-line no-unused-vars
   app.use((error, req, res, next) => {
+    // A unique-constraint violation (e.g. two requests racing to fund the
+    // same loan) is a conflict the client can act on, not a server fault.
+    if (error.code === "23505") {
+      return res.status(409).json({ error: "This record already exists." });
+    }
+
     const status = error.statusCode || 500;
 
     if (status >= 500) {

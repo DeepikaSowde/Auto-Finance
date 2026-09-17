@@ -1,6 +1,7 @@
 // src/middleware/requireAuth.js
 
 import { getUserForToken } from "../services/auth.js";
+import { asyncHandler } from "../util/asyncHandler.js";
 
 const readToken = (req) => {
   const header = req.get("authorization") || "";
@@ -8,8 +9,8 @@ const readToken = (req) => {
   return header.startsWith("Bearer ") ? header.slice(7).trim() : "";
 };
 
-export const requireAuth = (req, res, next) => {
-  const user = getUserForToken(readToken(req));
+export const requireAuth = asyncHandler(async (req, res, next) => {
+  const user = await getUserForToken(readToken(req));
 
   if (!user) {
     return res.status(401).json({ error: "Authentication required." });
@@ -17,7 +18,7 @@ export const requireAuth = (req, res, next) => {
 
   req.user = user;
   next();
-};
+});
 
 export const requireRole =
   (...roles) =>

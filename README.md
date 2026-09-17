@@ -1,6 +1,6 @@
 # Auto Finance / Loan Management
 
-Frontend: React + Vite. Backend: Express + SQLite (see [backend/README.md](backend/README.md)).
+Frontend: React + Vite. Backend: Express + PostgreSQL (see [backend/README.md](backend/README.md)).
 
 ## Running locally
 
@@ -8,6 +8,7 @@ Frontend: React + Vite. Backend: Express + SQLite (see [backend/README.md](backe
 # Terminal 1 — API + database
 cd backend
 npm install
+cp .env.example .env   # then set DATABASE_URL to your PostgreSQL connection string
 npm run dev
 
 # Terminal 2 — frontend
@@ -21,7 +22,7 @@ override with `VITE_API_BASE_URL` (see `.env.example`).
 Log in with `admin` / `admin123` (admin) or `staff` / `staff123` (staff).
 
 Customers, vehicles, loans, repayment schedules, collections and login are
-served by the API and stored in SQLite. Expenses, investors, re-loan rules and
+served by the API and stored in PostgreSQL. Expenses, investors, re-loan rules and
 the ledger view still use browser storage for now.
 
 

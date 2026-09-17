@@ -27,6 +27,7 @@ import {
   saveReLoanRules,
 } from "../services/reloanRepository.js";
 import { requireRole } from "../middleware/requireAuth.js";
+import { asyncHandler } from "../util/asyncHandler.js";
 
 /* =========================================================
    INVESTORS
@@ -34,54 +35,66 @@ import { requireRole } from "../middleware/requireAuth.js";
 
 export const investorsRouter = Router();
 
-investorsRouter.get("/", (req, res) => {
-  res.json(getInvestors());
-});
+investorsRouter.get(
+  "/",
+  asyncHandler(async (req, res) => {
+    res.json(await getInvestors());
+  })
+);
 
-investorsRouter.get("/summary", (req, res) => {
-  res.json(getFundingSummary());
-});
+investorsRouter.get(
+  "/summary",
+  asyncHandler(async (req, res) => {
+    res.json(await getFundingSummary());
+  })
+);
 
-investorsRouter.get("/transactions", (req, res) => {
-  res.json(getInvestorTransactions(req.query.investorId));
-});
+investorsRouter.get(
+  "/transactions",
+  asyncHandler(async (req, res) => {
+    res.json(await getInvestorTransactions(req.query.investorId));
+  })
+);
 
-investorsRouter.get("/:investorId", (req, res) => {
-  const investor = getInvestorById(req.params.investorId);
+investorsRouter.get(
+  "/:investorId",
+  asyncHandler(async (req, res) => {
+    const investor = await getInvestorById(req.params.investorId);
 
-  if (!investor) {
-    return res.status(404).json({ error: "Investor not found." });
-  }
+    if (!investor) {
+      return res.status(404).json({ error: "Investor not found." });
+    }
 
-  res.json(investor);
-});
+    res.json(investor);
+  })
+);
 
-investorsRouter.post("/", requireRole("admin"), (req, res, next) => {
-  try {
-    res.status(201).json(createInvestor(req.body || {}));
-  } catch (error) {
-    next(error);
-  }
-});
+investorsRouter.post(
+  "/",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await createInvestor(req.body || {}));
+  })
+);
 
-investorsRouter.post("/:investorId/investments", requireRole("admin"), (req, res, next) => {
-  try {
-    res.status(201).json(
-      addInvestorInvestment({ ...(req.body || {}), investorId: req.params.investorId })
-    );
-  } catch (error) {
-    next(error);
-  }
-});
+investorsRouter.post(
+  "/:investorId/investments",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    res
+      .status(201)
+      .json(await addInvestorInvestment({ ...(req.body || {}), investorId: req.params.investorId }));
+  })
+);
 
 // Funding a loan draws on the whole pool, so it is not nested under an investor.
-investorsRouter.post("/allocations", requireRole("admin"), (req, res, next) => {
-  try {
-    res.status(201).json(allocateInvestmentPoolToLoan(req.body || {}));
-  } catch (error) {
-    next(error);
-  }
-});
+investorsRouter.post(
+  "/allocations",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await allocateInvestmentPoolToLoan(req.body || {}));
+  })
+);
 
 /* =========================================================
    EXPENSES
@@ -89,49 +102,59 @@ investorsRouter.post("/allocations", requireRole("admin"), (req, res, next) => {
 
 export const expensesRouter = Router();
 
-expensesRouter.get("/", (req, res) => {
-  res.json(getExpenses());
-});
+expensesRouter.get(
+  "/",
+  asyncHandler(async (req, res) => {
+    res.json(await getExpenses());
+  })
+);
 
-expensesRouter.get("/:expenseId", (req, res) => {
-  const expense = getExpenseById(req.params.expenseId);
-
-  if (!expense) {
-    return res.status(404).json({ error: "Expense not found." });
-  }
-
-  res.json(expense);
-});
-
-expensesRouter.post("/", requireRole("admin"), (req, res, next) => {
-  try {
-    res.status(201).json(addExpense(req.body || {}));
-  } catch (error) {
-    next(error);
-  }
-});
-
-expensesRouter.put("/:expenseId", requireRole("admin"), (req, res, next) => {
-  try {
-    const expense = updateExpense(req.params.expenseId, req.body || {});
+expensesRouter.get(
+  "/:expenseId",
+  asyncHandler(async (req, res) => {
+    const expense = await getExpenseById(req.params.expenseId);
 
     if (!expense) {
       return res.status(404).json({ error: "Expense not found." });
     }
 
     res.json(expense);
-  } catch (error) {
-    next(error);
-  }
-});
+  })
+);
 
-expensesRouter.delete("/:expenseId", requireRole("admin"), (req, res) => {
-  if (!deleteExpense(req.params.expenseId)) {
-    return res.status(404).json({ error: "Expense not found." });
-  }
+expensesRouter.post(
+  "/",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await addExpense(req.body || {}));
+  })
+);
 
-  res.status(204).send();
-});
+expensesRouter.put(
+  "/:expenseId",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const expense = await updateExpense(req.params.expenseId, req.body || {});
+
+    if (!expense) {
+      return res.status(404).json({ error: "Expense not found." });
+    }
+
+    res.json(expense);
+  })
+);
+
+expensesRouter.delete(
+  "/:expenseId",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    if (!(await deleteExpense(req.params.expenseId))) {
+      return res.status(404).json({ error: "Expense not found." });
+    }
+
+    res.status(204).send();
+  })
+);
 
 /* =========================================================
    RE-LOAN
@@ -139,22 +162,31 @@ expensesRouter.delete("/:expenseId", requireRole("admin"), (req, res) => {
 
 export const reloanRouter = Router();
 
-reloanRouter.get("/rules", (req, res) => {
-  res.json(getReLoanRules());
-});
+reloanRouter.get(
+  "/rules",
+  asyncHandler(async (req, res) => {
+    res.json(await getReLoanRules());
+  })
+);
 
-reloanRouter.put("/rules", requireRole("admin"), (req, res) => {
-  res.json(saveReLoanRules(req.body || {}));
-});
+reloanRouter.put(
+  "/rules",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    res.json(await saveReLoanRules(req.body || {}));
+  })
+);
 
-reloanRouter.get("/eligibility", (req, res) => {
-  res.json(getEligibilityChecks(req.query.loanId));
-});
+reloanRouter.get(
+  "/eligibility",
+  asyncHandler(async (req, res) => {
+    res.json(await getEligibilityChecks(req.query.loanId));
+  })
+);
 
-reloanRouter.post("/eligibility", (req, res, next) => {
-  try {
-    res.status(201).json(saveEligibilityCheck(req.body || {}));
-  } catch (error) {
-    next(error);
-  }
-});
+reloanRouter.post(
+  "/eligibility",
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await saveEligibilityCheck(req.body || {}));
+  })
+);

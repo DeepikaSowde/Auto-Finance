@@ -1,27 +1,40 @@
 # Auto Finance API
 
-Express + SQLite backend for the Auto Finance app. Replaces the browser
-`localStorage` prototype for the money-critical parts of the system:
-customers, vehicles, loans, installments, collections and login.
+Express + PostgreSQL backend for the Auto Finance app. All application data —
+customers, vehicles, loans, installments, collections, investors, expenses,
+re-loan rules and login — lives in the database.
 
 ## Stack
 
 - **Express** — REST API
-- **SQLite** via Node's built-in [`node:sqlite`](https://nodejs.org/api/sqlite.html)
-  — no native build step, no external database server. Requires **Node 22.5+**
-  (this project runs on Node 24).
-- Database file: `backend/data/autofinance.db` (created on first run, gitignored).
+- **PostgreSQL** via [`pg`](https://node-postgres.com). Developed against
+  PostgreSQL 18 on [Neon](https://neon.tech); any PostgreSQL 13+ works.
+- **Node.js 22+**
 
 ## Setup
 
 ```bash
 cd backend
 npm install
-cp .env.example .env   # optional — the defaults already work
+cp .env.example .env
+# edit .env and set DATABASE_URL to your connection string
 npm run dev            # or: npm start
 ```
 
-Listens on `http://localhost:4000` (`PORT` in `.env`).
+On startup the API creates any missing tables (`src/db/schema.sql` is
+idempotent) and seeds the two demo users, then listens on
+`http://localhost:4000`.
+
+**`.env` holds your database password and is gitignored — never commit it.**
+If a connection string is ever exposed, reset the role password in your
+provider's console.
+
+### Connection security
+
+For hosted databases the pool enforces full TLS certificate verification
+(`verify-full`) and SCRAM channel binding. Neon issues `sslmode=require`,
+which node-postgres flags as ambiguous, so `src/db/connection.js` upgrades it
+explicitly rather than silently accepting a weaker mode.
 
 ## Login
 
@@ -82,6 +95,22 @@ is the only thing that moves money, and it happens in one transaction
 Guards: a closed or foreclosed loan refuses payment, a non-positive amount is
 rejected, and a collection can never post twice. Reversing an approved
 collection unwinds its postings and recomputes the schedule.
+
+### Concurrency
+
+Unlike SQLite, PostgreSQL runs writes in parallel, so the money paths lock
+explicitly:
+
+- **Approval** takes `SELECT … FOR UPDATE` on the collection and its loan, so
+  two admins approving at once cannot both post against the same balances.
+- **Loan funding** holds a transaction-scoped advisory lock on the investment
+  pool, so simultaneous disbursements cannot together overdraw it.
+- **One allocation per loan** is also a partial unique index, returned as
+  `409` if a race ever reaches it.
+
+These were verified by firing concurrent requests: 10 simultaneous approvals
+of one collection post exactly once; 5 simultaneous ₹3,00,000 draws on a
+₹10,00,000 pool succeed exactly 3 times.
 
 ## API
 

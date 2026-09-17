@@ -1,32 +1,30 @@
--- Auto Finance — core money-path schema.
+-- Auto Finance — PostgreSQL schema.
 --
--- Relational tables for anything that is queried, joined or aggregated.
--- JSON text columns only for genuinely free-form sub-objects (KYC fields,
--- document metadata, insurance, charges, allocation snapshots) — these
--- mirror the nested shape the React app already expects.
-
-PRAGMA foreign_keys = ON;
+-- Relational tables for anything queried, joined or aggregated. jsonb
+-- columns only for genuinely free-form sub-objects (KYC fields, document
+-- metadata, insurance, charges, allocation snapshots), mirroring the
+-- nested shape the React app consumes.
 
 /* =========================================================
    AUTH
 ========================================================= */
 
 CREATE TABLE IF NOT EXISTS users (
-  pk             INTEGER PRIMARY KEY AUTOINCREMENT,
+  pk             INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   id             TEXT UNIQUE NOT NULL,
   username       TEXT UNIQUE NOT NULL,
   password_hash  TEXT NOT NULL,
   password_salt  TEXT NOT NULL,
   name           TEXT NOT NULL,
   role           TEXT NOT NULL CHECK (role IN ('admin', 'staff')),
-  created_at     TEXT NOT NULL
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
   token       TEXT PRIMARY KEY,
   user_pk     INTEGER NOT NULL REFERENCES users (pk) ON DELETE CASCADE,
-  created_at  TEXT NOT NULL,
-  expires_at  TEXT NOT NULL
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at  TIMESTAMPTZ NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user_pk ON sessions (user_pk);
@@ -36,37 +34,36 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_pk ON sessions (user_pk);
 ========================================================= */
 
 CREATE TABLE IF NOT EXISTS customers (
-  pk               INTEGER PRIMARY KEY AUTOINCREMENT,
+  pk               INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   id               TEXT UNIQUE NOT NULL,
   customer_number  TEXT NOT NULL,
   status           TEXT NOT NULL DEFAULT 'Active',
-  personal_json    TEXT NOT NULL DEFAULT '{}',
-  kyc_json         TEXT NOT NULL DEFAULT '{}',
-  documents_json   TEXT NOT NULL DEFAULT '{}',
-  photo_json       TEXT NOT NULL DEFAULT '{}',
-  created_at       TEXT NOT NULL,
-  updated_at       TEXT NOT NULL
+  personal         JSONB NOT NULL DEFAULT '{}'::jsonb,
+  kyc              JSONB NOT NULL DEFAULT '{}'::jsonb,
+  documents        JSONB NOT NULL DEFAULT '{}'::jsonb,
+  photo            JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS guarantors (
-  pk              INTEGER PRIMARY KEY AUTOINCREMENT,
-  customer_pk     INTEGER NOT NULL UNIQUE REFERENCES customers (pk) ON DELETE CASCADE,
-  has_guarantor   INTEGER NOT NULL DEFAULT 0,
-  personal_json   TEXT NOT NULL DEFAULT '{}',
-  kyc_json        TEXT NOT NULL DEFAULT '{}',
-  documents_json  TEXT NOT NULL DEFAULT '{}',
-  photo_json      TEXT NOT NULL DEFAULT '{}'
+  pk             INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  customer_pk    INTEGER NOT NULL UNIQUE REFERENCES customers (pk) ON DELETE CASCADE,
+  has_guarantor  BOOLEAN NOT NULL DEFAULT false,
+  personal       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  kyc            JSONB NOT NULL DEFAULT '{}'::jsonb,
+  documents      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  photo          JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 
 /* =========================================================
    VEHICLE
-   One unified table. Replaces the three competing vehicle
-   stores the frontend grew (customerStorage's dead copy,
-   vehicleStorage's live one, and dead vehicleSaleStorage).
+   One unified table, replacing the three competing vehicle
+   stores the frontend grew.
 ========================================================= */
 
 CREATE TABLE IF NOT EXISTS vehicles (
-  pk                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  pk                  INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   id                  TEXT UNIQUE NOT NULL,
   customer_pk         INTEGER NOT NULL REFERENCES customers (pk) ON DELETE CASCADE,
   vehicle_type        TEXT,
@@ -76,37 +73,37 @@ CREATE TABLE IF NOT EXISTS vehicles (
   colour              TEXT,
   manufacturing_year  TEXT,
   fuel_type           TEXT,
-  vehicle_value       REAL NOT NULL DEFAULT 0,
+  vehicle_value       NUMERIC(14, 2) NOT NULL DEFAULT 0,
   status              TEXT NOT NULL DEFAULT 'ACTIVE'
                       CHECK (status IN ('ACTIVE', 'SEIZED', 'PENDING_SALE', 'RELEASED', 'SOLD')),
-  seizure_json        TEXT,
-  release_json        TEXT,
-  sale_json           TEXT,
-  created_at          TEXT NOT NULL,
-  updated_at          TEXT NOT NULL
+  seizure             JSONB,
+  release             JSONB,
+  sale                JSONB,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_vehicles_customer_pk ON vehicles (customer_pk);
 CREATE INDEX IF NOT EXISTS idx_vehicles_status ON vehicles (status);
 
--- Append-only lifecycle history (seize / release / pending-sale / sale / cancel).
+-- Append-only lifecycle history.
 CREATE TABLE IF NOT EXISTS vehicle_events (
-  pk           INTEGER PRIMARY KEY AUTOINCREMENT,
-  id           TEXT UNIQUE NOT NULL,
-  vehicle_pk   INTEGER NOT NULL REFERENCES vehicles (pk) ON DELETE CASCADE,
-  event_type   TEXT NOT NULL
-               CHECK (event_type IN ('SEIZURE', 'RELEASE', 'PENDING_SALE', 'SALE', 'SALE_CANCELLED')),
-  from_status  TEXT,
-  to_status    TEXT NOT NULL,
-  details_json TEXT NOT NULL DEFAULT '{}',
-  performed_by TEXT,
-  created_at   TEXT NOT NULL
+  pk            INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id            TEXT UNIQUE NOT NULL,
+  vehicle_pk    INTEGER NOT NULL REFERENCES vehicles (pk) ON DELETE CASCADE,
+  event_type    TEXT NOT NULL
+                CHECK (event_type IN ('SEIZURE', 'RELEASE', 'PENDING_SALE', 'SALE', 'SALE_CANCELLED')),
+  from_status   TEXT,
+  to_status     TEXT NOT NULL,
+  details       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  performed_by  TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_vehicle_events_vehicle_pk ON vehicle_events (vehicle_pk);
 
 CREATE TABLE IF NOT EXISTS rc_details (
-  pk                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  pk                    INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   vehicle_pk            INTEGER NOT NULL UNIQUE REFERENCES vehicles (pk) ON DELETE CASCADE,
   rc_book_number        TEXT,
   registration_number   TEXT,
@@ -115,12 +112,12 @@ CREATE TABLE IF NOT EXISTS rc_details (
   chassis_number        TEXT,
   engine_number         TEXT,
   existing_financier    TEXT DEFAULT 'None',
-  hypothecation         INTEGER NOT NULL DEFAULT 0,
+  hypothecation         BOOLEAN NOT NULL DEFAULT false,
   tax_expiry            TEXT,
   permit_expiry         TEXT,
   fc_expiry             TEXT,
-  insurance_json        TEXT NOT NULL DEFAULT '{}',
-  endorsement_json      TEXT NOT NULL DEFAULT '{}',
+  insurance             JSONB NOT NULL DEFAULT '{}'::jsonb,
+  endorsement           JSONB NOT NULL DEFAULT '{}'::jsonb,
   remarks               TEXT
 );
 
@@ -131,41 +128,41 @@ CREATE INDEX IF NOT EXISTS idx_rc_registration ON rc_details (registration_numbe
 ========================================================= */
 
 CREATE TABLE IF NOT EXISTS loans (
-  pk                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  pk                   INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   id                   TEXT UNIQUE NOT NULL,
   loan_number          TEXT NOT NULL,
   customer_pk          INTEGER NOT NULL REFERENCES customers (pk) ON DELETE CASCADE,
   vehicle_pk           INTEGER REFERENCES vehicles (pk) ON DELETE SET NULL,
   previous_loan_pk     INTEGER REFERENCES loans (pk) ON DELETE SET NULL,
-  is_primary           INTEGER NOT NULL DEFAULT 1,
+  is_primary           BOOLEAN NOT NULL DEFAULT true,
 
-  vehicle_amount       REAL NOT NULL DEFAULT 0,
-  down_payment         REAL NOT NULL DEFAULT 0,
-  loan_amount          REAL NOT NULL DEFAULT 0,
+  vehicle_amount       NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  down_payment         NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  loan_amount          NUMERIC(14, 2) NOT NULL DEFAULT 0,
 
-  interest_rate        REAL NOT NULL DEFAULT 0,
+  interest_rate        NUMERIC(8, 4) NOT NULL DEFAULT 0,
   interest_type        TEXT NOT NULL DEFAULT 'Flat',
   repayment_method     TEXT NOT NULL DEFAULT 'EMI',
   repayment_frequency  TEXT NOT NULL DEFAULT 'Monthly',
-  tenure               REAL NOT NULL DEFAULT 0,
+  tenure               NUMERIC(10, 2) NOT NULL DEFAULT 0,
   tenure_unit          TEXT NOT NULL DEFAULT 'Months',
   first_due_date       TEXT,
 
-  calculation_json     TEXT NOT NULL DEFAULT '{}',
-  charges_json         TEXT NOT NULL DEFAULT '{}',
-  collection_json      TEXT NOT NULL DEFAULT '{}',
-  funding_json         TEXT NOT NULL DEFAULT '{}',
-  repayment_meta_json  TEXT NOT NULL DEFAULT '{}',
+  calculation          JSONB NOT NULL DEFAULT '{}'::jsonb,
+  charges              JSONB NOT NULL DEFAULT '{}'::jsonb,
+  collection           JSONB NOT NULL DEFAULT '{}'::jsonb,
+  funding              JSONB NOT NULL DEFAULT '{}'::jsonb,
+  repayment_meta       JSONB NOT NULL DEFAULT '{}'::jsonb,
 
   remarks              TEXT,
   status               TEXT NOT NULL DEFAULT 'Active',
 
   foreclosure_status   TEXT,
-  foreclosed_at        TEXT,
+  foreclosed_at        TIMESTAMPTZ,
   foreclosure_reason   TEXT,
 
-  created_at           TEXT NOT NULL,
-  updated_at           TEXT NOT NULL
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_loans_customer_pk ON loans (customer_pk);
@@ -173,18 +170,18 @@ CREATE INDEX IF NOT EXISTS idx_loans_vehicle_pk ON loans (vehicle_pk);
 CREATE INDEX IF NOT EXISTS idx_loans_status ON loans (status);
 
 CREATE TABLE IF NOT EXISTS installments (
-  pk                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  pk                   INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   loan_pk              INTEGER NOT NULL REFERENCES loans (pk) ON DELETE CASCADE,
   installment_number   INTEGER NOT NULL,
   due_date             TEXT,
-  opening_balance      REAL NOT NULL DEFAULT 0,
-  principal            REAL NOT NULL DEFAULT 0,
-  interest             REAL NOT NULL DEFAULT 0,
-  payment_amount       REAL NOT NULL DEFAULT 0,
-  closing_balance      REAL NOT NULL DEFAULT 0,
-  paid_principal       REAL NOT NULL DEFAULT 0,
-  paid_interest        REAL NOT NULL DEFAULT 0,
-  penalty_paid_amount  REAL NOT NULL DEFAULT 0,
+  opening_balance      NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  principal            NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  interest             NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  payment_amount       NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  closing_balance      NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  paid_principal       NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  paid_interest        NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  penalty_paid_amount  NUMERIC(14, 2) NOT NULL DEFAULT 0,
   status               TEXT NOT NULL DEFAULT 'Pending',
   UNIQUE (loan_pk, installment_number)
 );
@@ -196,7 +193,7 @@ CREATE INDEX IF NOT EXISTS idx_installments_loan_pk ON installments (loan_pk);
 ========================================================= */
 
 CREATE TABLE IF NOT EXISTS collections (
-  pk                           INTEGER PRIMARY KEY AUTOINCREMENT,
+  pk                           INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   id                           TEXT UNIQUE NOT NULL,
   customer_pk                  INTEGER REFERENCES customers (pk) ON DELETE SET NULL,
   loan_pk                      INTEGER REFERENCES loans (pk) ON DELETE SET NULL,
@@ -204,10 +201,10 @@ CREATE TABLE IF NOT EXISTS collections (
   status                       TEXT NOT NULL DEFAULT 'Pending'
                                CHECK (status IN ('Pending', 'Approved', 'Rejected', 'Reversed')),
 
-  amount                       REAL NOT NULL DEFAULT 0,
-  due_amount                   REAL NOT NULL DEFAULT 0,
-  penalty_amount               REAL NOT NULL DEFAULT 0,
-  total_payable                REAL NOT NULL DEFAULT 0,
+  amount                       NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  due_amount                   NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  penalty_amount               NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  total_payable                NUMERIC(14, 2) NOT NULL DEFAULT 0,
 
   payment_type                 TEXT,
   pay_mode                     TEXT,
@@ -222,52 +219,52 @@ CREATE TABLE IF NOT EXISTS collections (
   overdue_days                 INTEGER NOT NULL DEFAULT 0,
   grace_days                   INTEGER NOT NULL DEFAULT 0,
 
-  amount_toward_due            REAL NOT NULL DEFAULT 0,
-  amount_toward_penalty        REAL NOT NULL DEFAULT 0,
-  amount_toward_principal      REAL NOT NULL DEFAULT 0,
-  amount_toward_advance        REAL NOT NULL DEFAULT 0,
-  amount_excess                REAL NOT NULL DEFAULT 0,
+  amount_toward_due            NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  amount_toward_penalty        NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  amount_toward_principal      NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  amount_toward_advance        NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  amount_excess                NUMERIC(14, 2) NOT NULL DEFAULT 0,
 
-  allocation_json              TEXT,
-  repayment_processed          INTEGER NOT NULL DEFAULT 0,
-  repayment_processed_at       TEXT,
+  allocation                   JSONB,
+  repayment_processed          BOOLEAN NOT NULL DEFAULT false,
+  repayment_processed_at       TIMESTAMPTZ,
   repayment_processing_status  TEXT NOT NULL DEFAULT 'Pending',
   repayment_error              TEXT,
 
-  submitted_at                 TEXT NOT NULL,
+  submitted_at                 TIMESTAMPTZ NOT NULL DEFAULT now(),
   collected_date               TEXT,
-  approved_at                  TEXT,
+  approved_at                  TIMESTAMPTZ,
   approved_by                  TEXT,
-  rejected_at                  TEXT,
+  rejected_at                  TIMESTAMPTZ,
   rejected_by                  TEXT,
   rejection_remarks            TEXT,
-  reversed_at                  TEXT,
+  reversed_at                  TIMESTAMPTZ,
   reversed_by                  TEXT,
   reversal_reason              TEXT,
 
-  created_at                   TEXT NOT NULL,
-  updated_at                   TEXT NOT NULL
+  created_at                   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at                   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_collections_loan_pk ON collections (loan_pk);
 CREATE INDEX IF NOT EXISTS idx_collections_customer_pk ON collections (customer_pk);
 CREATE INDEX IF NOT EXISTS idx_collections_status ON collections (status);
 
--- One row per allocation bucket actually posted against a loan.
--- This is the ledger of record for money applied.
+-- One row per allocation bucket actually posted: the ledger of record
+-- for money applied to a loan.
 CREATE TABLE IF NOT EXISTS payment_allocations (
-  pk                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  pk                  INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   id                  TEXT UNIQUE NOT NULL,
   loan_pk             INTEGER NOT NULL REFERENCES loans (pk) ON DELETE CASCADE,
   collection_pk       INTEGER REFERENCES collections (pk) ON DELETE SET NULL,
   installment_number  INTEGER,
   due_date            TEXT,
-  amount              REAL NOT NULL DEFAULT 0,
+  amount              NUMERIC(14, 2) NOT NULL DEFAULT 0,
   type                TEXT NOT NULL,
-  is_penalty          INTEGER NOT NULL DEFAULT 0,
-  is_interest         INTEGER NOT NULL DEFAULT 0,
-  is_principal        INTEGER NOT NULL DEFAULT 0,
-  created_at          TEXT NOT NULL
+  is_penalty          BOOLEAN NOT NULL DEFAULT false,
+  is_interest         BOOLEAN NOT NULL DEFAULT false,
+  is_principal        BOOLEAN NOT NULL DEFAULT false,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_allocations_loan_pk ON payment_allocations (loan_pk);
@@ -276,46 +273,44 @@ CREATE INDEX IF NOT EXISTS idx_allocations_collection_pk ON payment_allocations 
 /* =========================================================
    INVESTORS
 
-   Transactions are the ledger of record: an investor's
-   invested / allocated / available figures are always derived
-   by summing them, never stored as mutable columns (the old
-   browser version kept stale copies on the investor row).
+   Transactions are the ledger of record: invested / allocated /
+   available are summed from them, never stored as mutable columns.
 ========================================================= */
 
 CREATE TABLE IF NOT EXISTS investors (
-  pk                 INTEGER PRIMARY KEY AUTOINCREMENT,
-  id                 TEXT UNIQUE NOT NULL,
-  name               TEXT NOT NULL,
-  mobile_number      TEXT NOT NULL,
-  email              TEXT,
-  address            TEXT,
-  city               TEXT,
-  state              TEXT,
-  pincode            TEXT,
-  investor_type      TEXT NOT NULL DEFAULT 'Individual',
-  pan                TEXT,
-  bank_details_json  TEXT NOT NULL DEFAULT '{}',
-  investment_json    TEXT NOT NULL DEFAULT '{}',
-  status             TEXT NOT NULL DEFAULT 'Active',
-  remarks            TEXT,
-  created_at         TEXT NOT NULL,
-  updated_at         TEXT NOT NULL
+  pk             INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id             TEXT UNIQUE NOT NULL,
+  name           TEXT NOT NULL,
+  mobile_number  TEXT NOT NULL,
+  email          TEXT,
+  address        TEXT,
+  city           TEXT,
+  state          TEXT,
+  pincode        TEXT,
+  investor_type  TEXT NOT NULL DEFAULT 'Individual',
+  pan            TEXT,
+  bank_details   JSONB NOT NULL DEFAULT '{}'::jsonb,
+  investment     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  status         TEXT NOT NULL DEFAULT 'Active',
+  remarks        TEXT,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS investor_transactions (
-  pk               INTEGER PRIMARY KEY AUTOINCREMENT,
+  pk               INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   id               TEXT UNIQUE NOT NULL,
   -- Loan allocations draw on the whole pool, so they carry no investor.
   investor_pk      INTEGER REFERENCES investors (pk) ON DELETE CASCADE,
   type             TEXT NOT NULL CHECK (type IN ('Investment', 'Loan Allocation')),
-  amount           REAL NOT NULL DEFAULT 0,
+  amount           NUMERIC(14, 2) NOT NULL DEFAULT 0,
   date             TEXT,
   reference        TEXT,
   investment_mode  TEXT,
   notes            TEXT,
   loan_pk          INTEGER REFERENCES loans (pk) ON DELETE SET NULL,
   loan_number      TEXT,
-  created_at       TEXT NOT NULL
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_investor_tx_investor ON investor_transactions (investor_pk);
@@ -329,14 +324,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_investor_tx_one_alloc_per_loan
 /* =========================================================
    EXPENSES
 
-   Free-form in the UI, so the detail travels as JSON while
-   the fields that get filtered and summed are real columns.
+   Free-form in the UI, so the detail travels as jsonb while the
+   fields that get filtered and summed are real columns.
 ========================================================= */
 
 CREATE TABLE IF NOT EXISTS expenses (
-  pk            INTEGER PRIMARY KEY AUTOINCREMENT,
+  pk            INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   id            TEXT UNIQUE NOT NULL,
-  amount        REAL NOT NULL DEFAULT 0,
+  amount        NUMERIC(14, 2) NOT NULL DEFAULT 0,
   status        TEXT NOT NULL DEFAULT 'Pending',
   category      TEXT,
   sub_category  TEXT,
@@ -347,10 +342,10 @@ CREATE TABLE IF NOT EXISTS expenses (
   reference     TEXT,
   description   TEXT,
   remarks       TEXT,
-  details_json  TEXT NOT NULL DEFAULT '{}',
+  details       JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_by    TEXT,
-  created_at    TEXT NOT NULL,
-  updated_at    TEXT NOT NULL
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_expenses_status ON expenses (status);
@@ -365,19 +360,19 @@ CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses (expense_date);
 
 CREATE TABLE IF NOT EXISTS reloan_rules (
   pk          INTEGER PRIMARY KEY CHECK (pk = 1),
-  rules_json  TEXT NOT NULL,
-  updated_at  TEXT NOT NULL
+  rules       JSONB NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS reloan_eligibility_checks (
-  pk           INTEGER PRIMARY KEY AUTOINCREMENT,
+  pk           INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   id           TEXT UNIQUE NOT NULL,
   customer_pk  INTEGER REFERENCES customers (pk) ON DELETE CASCADE,
   loan_pk      INTEGER REFERENCES loans (pk) ON DELETE CASCADE,
-  eligible     INTEGER NOT NULL DEFAULT 0,
+  eligible     BOOLEAN NOT NULL DEFAULT false,
   status       TEXT NOT NULL,
-  result_json  TEXT NOT NULL DEFAULT '{}',
-  checked_at   TEXT NOT NULL
+  result       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  checked_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_reloan_checks_loan ON reloan_eligibility_checks (loan_pk);

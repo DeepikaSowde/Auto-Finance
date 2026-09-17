@@ -4,29 +4,17 @@
 // every invested / allocated / available figure is summed from them rather
 // than stored, so the numbers cannot drift out of sync.
 
-import { db } from "../db/connection.js";
+import { query, withTransaction } from "../db/connection.js";
 
 const roundMoney = (value) => {
   const number = Number(value);
 
-  return Number.isFinite(number)
-    ? Math.round((number + Number.EPSILON) * 100) / 100
-    : 0;
+  return Number.isFinite(number) ? Math.round((number + Number.EPSILON) * 100) / 100 : 0;
 };
 
 const pad = (number, length = 4) => String(number).padStart(length, "0");
 
-const nowIso = () => new Date().toISOString();
-
-const parseJson = (value, fallback) => {
-  if (!value) return fallback;
-
-  try {
-    return JSON.parse(value);
-  } catch {
-    return fallback;
-  }
-};
+const iso = (value) => (value ? new Date(value).toISOString() : "");
 
 class InvestorError extends Error {
   constructor(message, statusCode = 400) {
@@ -51,7 +39,7 @@ const mapTransaction = (row) => ({
   notes: row.notes || "",
   loanId: row.loan_id || "",
   loanNumber: row.loan_number || "",
-  createdAt: row.created_at,
+  createdAt: iso(row.created_at),
 });
 
 const SELECT_TRANSACTIONS = `
@@ -65,31 +53,21 @@ const SELECT_TRANSACTIONS = `
 `;
 
 /*
- * Per-investor totals, computed in SQL.
+ * One query that returns every investor with their totals already summed,
+ * rather than a round trip per investor.
  */
-const totalsForInvestor = (investorPk) => {
-  const row = db
-    .prepare(
-      `SELECT
-         COALESCE(SUM(CASE WHEN type = 'Investment' THEN amount END), 0) AS invested,
-         COALESCE(SUM(CASE WHEN type = 'Loan Allocation' THEN amount END), 0) AS allocated
-       FROM investor_transactions
-       WHERE investor_pk = $pk`
-    )
-    .get({ $pk: investorPk });
-
-  const totalInvested = roundMoney(row.invested);
-  const allocatedAmount = roundMoney(row.allocated);
-
-  return {
-    totalInvested,
-    allocatedAmount,
-    availableBalance: roundMoney(Math.max(0, totalInvested - allocatedAmount)),
-  };
-};
+const SELECT_INVESTORS_WITH_TOTALS = `
+  SELECT
+    investors.*,
+    COALESCE(SUM(t.amount) FILTER (WHERE t.type = 'Investment'), 0) AS total_invested,
+    COALESCE(SUM(t.amount) FILTER (WHERE t.type = 'Loan Allocation'), 0) AS total_allocated
+  FROM investors
+  LEFT JOIN investor_transactions t ON t.investor_pk = investors.pk
+`;
 
 const mapInvestor = (row) => {
-  const totals = totalsForInvestor(row.pk);
+  const totalInvested = roundMoney(row.total_invested);
+  const allocatedAmount = roundMoney(row.total_allocated);
 
   return {
     id: row.id,
@@ -102,15 +80,17 @@ const mapInvestor = (row) => {
     pincode: row.pincode || "",
     investorType: row.investor_type,
     pan: row.pan || "",
-    bankDetails: parseJson(row.bank_details_json, {}),
+    bankDetails: row.bank_details ?? {},
     investment: {
-      ...parseJson(row.investment_json, {}),
-      ...totals,
+      ...(row.investment ?? {}),
+      totalInvested,
+      allocatedAmount,
+      availableBalance: roundMoney(Math.max(0, totalInvested - allocatedAmount)),
     },
     status: row.status,
     remarks: row.remarks || "",
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
   };
 };
 
@@ -118,60 +98,63 @@ const mapInvestor = (row) => {
    READS
 ========================================================= */
 
-export const getInvestors = () =>
-  db.prepare("SELECT * FROM investors ORDER BY pk ASC").all().map(mapInvestor);
+export const getInvestors = async () => {
+  const result = await query(
+    `${SELECT_INVESTORS_WITH_TOTALS} GROUP BY investors.pk ORDER BY investors.pk ASC`
+  );
 
-export const getInvestorById = (investorId) => {
-  const row = db.prepare("SELECT * FROM investors WHERE id = $id").get({ $id: investorId });
-
-  return row ? mapInvestor(row) : null;
+  return result.rows.map(mapInvestor);
 };
 
-export const getInvestorTransactions = (investorId) => {
+export const getInvestorById = async (investorId) => {
+  const result = await query(
+    `${SELECT_INVESTORS_WITH_TOTALS} WHERE investors.id = $1 GROUP BY investors.pk`,
+    [investorId]
+  );
+
+  return result.rows[0] ? mapInvestor(result.rows[0]) : null;
+};
+
+export const getInvestorTransactions = async (investorId) => {
   if (!investorId) {
-    return db.prepare(`${SELECT_TRANSACTIONS} ORDER BY investor_transactions.pk ASC`).all().map(mapTransaction);
+    const result = await query(`${SELECT_TRANSACTIONS} ORDER BY investor_transactions.pk ASC`);
+
+    return result.rows.map(mapTransaction);
   }
 
-  return db
-    .prepare(`${SELECT_TRANSACTIONS} WHERE investors.id = $id ORDER BY investor_transactions.pk ASC`)
-    .all({ $id: investorId })
-    .map(mapTransaction);
+  const result = await query(
+    `${SELECT_TRANSACTIONS} WHERE investors.id = $1 ORDER BY investor_transactions.pk ASC`,
+    [investorId]
+  );
+
+  return result.rows.map(mapTransaction);
 };
 
 /*
- * Pool-wide funding position — what onboarding checks before
- * disbursing a loan.
+ * Pool-wide funding position: what onboarding checks before disbursing.
  */
-export const getFundingSummary = () => {
-  const row = db
-    .prepare(
-      `SELECT
-         COALESCE(SUM(CASE WHEN type = 'Investment' THEN amount END), 0) AS invested,
-         COALESCE(SUM(CASE WHEN type = 'Loan Allocation' THEN amount END), 0) AS allocated
-       FROM investor_transactions`
-    )
-    .get();
+export const getFundingSummary = async (client) => {
+  const run = client ? client.query.bind(client) : query;
 
-  const investorCount = db.prepare("SELECT COUNT(*) AS count FROM investors").get();
+  const result = await run(
+    `SELECT
+       COALESCE(SUM(amount) FILTER (WHERE type = 'Investment'), 0) AS invested,
+       COALESCE(SUM(amount) FILTER (WHERE type = 'Loan Allocation'), 0) AS allocated,
+       (SELECT COUNT(*)::int FROM investors) AS investor_count
+     FROM investor_transactions`
+  );
 
+  const row = result.rows[0];
   const totalInvestment = roundMoney(row.invested);
   const distributedToLoans = roundMoney(row.allocated);
 
   return {
-    totalInvestors: investorCount.count,
+    totalInvestors: row.investor_count,
     totalInvestment,
     distributedToLoans,
     availableInvestmentBalance: roundMoney(Math.max(0, totalInvestment - distributedToLoans)),
   };
 };
-
-const nextTransactionId = () => {
-  const row = db.prepare("SELECT COALESCE(MAX(pk), 0) AS max FROM investor_transactions").get();
-
-  return `ITX-${pad(row.max + 1)}`;
-};
-
-export const getNextInvestorTransactionId = () => nextTransactionId();
 
 /* =========================================================
    VALIDATION
@@ -216,43 +199,32 @@ const validateInvestor = (input) => {
   }
 };
 
-const insertTransaction = ({
-  investorPk = null,
-  type,
-  amount,
-  date,
-  reference = "",
-  investmentMode = "",
-  notes = "",
-  loanPk = null,
-  loanNumber = "",
-  now,
-}) => {
-  const result = db
-    .prepare(
-      `INSERT INTO investor_transactions
-        (id, investor_pk, type, amount, date, reference, investment_mode, notes, loan_pk, loan_number, created_at)
-       VALUES ('', $investorPk, $type, $amount, $date, $reference, $investmentMode, $notes, $loanPk, $loanNumber, $createdAt)`
-    )
-    .run({
-      $investorPk: investorPk,
-      $type: type,
-      $amount: roundMoney(amount),
-      $date: date || now,
-      $reference: reference,
-      $investmentMode: investmentMode,
-      $notes: notes,
-      $loanPk: loanPk,
-      $loanNumber: loanNumber,
-      $createdAt: now,
-    });
+const insertTransaction = async (
+  client,
+  { investorPk = null, type, amount, date, reference = "", investmentMode = "", notes = "", loanPk = null, loanNumber = "" }
+) => {
+  const result = await client.query(
+    `INSERT INTO investor_transactions
+      (id, investor_pk, type, amount, date, reference, investment_mode, notes, loan_pk, loan_number)
+     VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING pk`,
+    [
+      investorPk,
+      type,
+      roundMoney(amount),
+      date || new Date().toISOString(),
+      reference,
+      investmentMode,
+      notes,
+      loanPk,
+      loanNumber,
+    ]
+  );
 
-  const id = `ITX-${pad(result.lastInsertRowid)}`;
+  const pk = result.rows[0].pk;
+  const id = `ITX-${pad(pk)}`;
 
-  db.prepare("UPDATE investor_transactions SET id = $id WHERE pk = $pk").run({
-    $id: id,
-    $pk: result.lastInsertRowid,
-  });
+  await client.query("UPDATE investor_transactions SET id = $1 WHERE pk = $2", [id, pk]);
 
   return id;
 };
@@ -261,60 +233,49 @@ const insertTransaction = ({
    WRITES
 ========================================================= */
 
-export const createInvestor = (input = {}) => {
+export const createInvestor = async (input = {}) => {
   validateInvestor(input);
 
-  const now = nowIso();
   const amount = roundMoney(input.investment.initialAmount);
-  let investorId;
 
-  db.exec("BEGIN");
-
-  try {
-    const result = db
-      .prepare(
-        `INSERT INTO investors
-          (id, name, mobile_number, email, address, city, state, pincode, investor_type,
-           pan, bank_details_json, investment_json, status, remarks, created_at, updated_at)
-         VALUES
-          ('', $name, $mobileNumber, $email, $address, $city, $state, $pincode, $investorType,
-           $pan, $bankDetailsJson, $investmentJson, 'Active', $remarks, $createdAt, $updatedAt)`
-      )
-      .run({
-        $name: String(input.name).trim(),
-        $mobileNumber: String(input.mobileNumber || "").trim(),
-        $email: String(input.email || "").trim(),
-        $address: String(input.address || "").trim(),
-        $city: String(input.city || "").trim(),
-        $state: String(input.state || "").trim(),
-        $pincode: String(input.pincode || "").trim(),
-        $investorType: input.investorType || "Individual",
-        $pan: String(input.pan || "").trim().toUpperCase(),
-        $bankDetailsJson: JSON.stringify({
+  const investorId = await withTransaction(async (client) => {
+    const result = await client.query(
+      `INSERT INTO investors
+        (id, name, mobile_number, email, address, city, state, pincode, investor_type,
+         pan, bank_details, investment, status, remarks)
+       VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'Active', $12)
+       RETURNING pk`,
+      [
+        String(input.name).trim(),
+        String(input.mobileNumber || "").trim(),
+        String(input.email || "").trim(),
+        String(input.address || "").trim(),
+        String(input.city || "").trim(),
+        String(input.state || "").trim(),
+        String(input.pincode || "").trim(),
+        input.investorType || "Individual",
+        String(input.pan || "").trim().toUpperCase(),
+        JSON.stringify({
           accountName: String(input.bankDetails?.accountName || "").trim(),
           accountNumber: String(input.bankDetails?.accountNumber || "").trim(),
           ifsc: String(input.bankDetails?.ifsc || "").trim().toUpperCase(),
         }),
-        $investmentJson: JSON.stringify({
+        JSON.stringify({
           initialAmount: amount,
           investmentDate: input.investment.investmentDate,
           referenceNumber: String(input.investment.referenceNumber || "").trim(),
           investmentMode: input.investment.investmentMode || "Bank Transfer",
         }),
-        $remarks: String(input.remarks || "").trim(),
-        $createdAt: now,
-        $updatedAt: now,
-      });
+        String(input.remarks || "").trim(),
+      ]
+    );
 
-    const investorPk = result.lastInsertRowid;
-    investorId = `INV-${pad(investorPk)}`;
+    const investorPk = result.rows[0].pk;
+    const id = `INV-${pad(investorPk)}`;
 
-    db.prepare("UPDATE investors SET id = $id WHERE pk = $pk").run({
-      $id: investorId,
-      $pk: investorPk,
-    });
+    await client.query("UPDATE investors SET id = $1 WHERE pk = $2", [id, investorPk]);
 
-    insertTransaction({
+    await insertTransaction(client, {
       investorPk,
       type: "Investment",
       amount,
@@ -322,19 +283,15 @@ export const createInvestor = (input = {}) => {
       reference: String(input.investment.referenceNumber || "").trim(),
       investmentMode: input.investment.investmentMode || "Bank Transfer",
       notes: String(input.remarks || "").trim() || "Initial investment",
-      now,
     });
 
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
+    return id;
+  });
 
   return getInvestorById(investorId);
 };
 
-export const addInvestorInvestment = ({
+export const addInvestorInvestment = async ({
   investorId,
   amount,
   date,
@@ -344,9 +301,8 @@ export const addInvestorInvestment = ({
 } = {}) => {
   const value = Number(amount);
 
-  const investorRow = db
-    .prepare("SELECT * FROM investors WHERE id = $id")
-    .get({ $id: investorId });
+  const investorResult = await query("SELECT pk FROM investors WHERE id = $1", [investorId]);
+  const investorRow = investorResult.rows[0];
 
   if (!investorRow) {
     throw new InvestorError("Investor not found.", 404);
@@ -360,31 +316,35 @@ export const addInvestorInvestment = ({
     throw new InvestorError("Investment date is required.");
   }
 
-  const now = nowIso();
+  const transactionId = await withTransaction((client) =>
+    insertTransaction(client, {
+      investorPk: investorRow.pk,
+      type: "Investment",
+      amount: value,
+      date,
+      reference,
+      investmentMode,
+      notes,
+    })
+  );
 
-  const id = insertTransaction({
-    investorPk: investorRow.pk,
-    type: "Investment",
-    amount: value,
-    date,
-    reference,
-    investmentMode,
-    notes,
-    now,
-  });
+  const transactions = await getInvestorTransactions(investorId);
 
   return {
-    transaction: getInvestorTransactions(investorId).find((item) => item.id === id),
-    investor: getInvestorById(investorId),
+    transaction: transactions.find((item) => item.id === transactionId),
+    investor: await getInvestorById(investorId),
   };
 };
 
 /*
- * Funds a loan from the pool. The balance check and the
- * one-allocation-per-loan rule are enforced here (and the latter is
- * also a unique index, so a race cannot slip a second one through).
+ * Funds a loan from the pool.
+ *
+ * The balance check and the insert run in one transaction under an
+ * advisory lock. Without it, two loans disbursed at the same instant could
+ * each see enough balance and together overdraw the pool. The unique index
+ * still backstops the one-allocation-per-loan rule.
  */
-export const allocateInvestmentPoolToLoan = ({
+export const allocateInvestmentPoolToLoan = async ({
   amount,
   loanId,
   loanNumber,
@@ -401,55 +361,56 @@ export const allocateInvestmentPoolToLoan = ({
     throw new InvestorError("Loan identity is required for funding allocation.");
   }
 
-  const loanRow = db
-    .prepare("SELECT * FROM loans WHERE id = $id OR loan_number = $number")
-    .get({ $id: loanId || "", $number: loanNumber || "" });
+  const transactionId = await withTransaction(async (client) => {
+    // Serialises every pool allocation for the length of this transaction.
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('investment_pool'))");
 
-  if (!loanRow) {
-    throw new InvestorError("Loan not found.", 404);
-  }
-
-  const existing = db
-    .prepare(
-      "SELECT COUNT(*) AS count FROM investor_transactions WHERE type = 'Loan Allocation' AND loan_pk = $pk"
-    )
-    .get({ $pk: loanRow.pk });
-
-  if (existing.count > 0) {
-    throw new InvestorError("This loan already has an investor funding allocation.", 409);
-  }
-
-  const summary = getFundingSummary();
-
-  if (summary.availableInvestmentBalance < value) {
-    throw new InvestorError(
-      `Insufficient investment balance. Available funding: ₹${summary.availableInvestmentBalance.toLocaleString(
-        "en-IN"
-      )}.`
+    const loanResult = await client.query(
+      "SELECT * FROM loans WHERE id = $1 OR loan_number = $2",
+      [loanId || "", loanNumber || ""]
     );
-  }
 
-  const now = nowIso();
+    const loanRow = loanResult.rows[0];
 
-  const id = insertTransaction({
-    type: "Loan Allocation",
-    amount: value,
-    date: date || now,
-    notes,
-    loanPk: loanRow.pk,
-    loanNumber: loanRow.loan_number,
-    now,
+    if (!loanRow) {
+      throw new InvestorError("Loan not found.", 404);
+    }
+
+    const existing = await client.query(
+      "SELECT COUNT(*)::int AS count FROM investor_transactions WHERE type = 'Loan Allocation' AND loan_pk = $1",
+      [loanRow.pk]
+    );
+
+    if (existing.rows[0].count > 0) {
+      throw new InvestorError("This loan already has an investor funding allocation.", 409);
+    }
+
+    const summary = await getFundingSummary(client);
+
+    if (summary.availableInvestmentBalance < value) {
+      throw new InvestorError(
+        `Insufficient investment balance. Available funding: ₹${summary.availableInvestmentBalance.toLocaleString(
+          "en-IN"
+        )}.`
+      );
+    }
+
+    return insertTransaction(client, {
+      type: "Loan Allocation",
+      amount: value,
+      date,
+      notes,
+      loanPk: loanRow.pk,
+      loanNumber: loanRow.loan_number,
+    });
   });
 
+  const transactions = await getInvestorTransactions();
+
   return {
-    transaction: getInvestorTransactions().find((item) => item.id === id),
-    summary: getFundingSummary(),
+    transaction: transactions.find((item) => item.id === transactionId),
+    summary: await getFundingSummary(),
   };
 };
-
-export const getInvestorFundedLoans = (investorId) =>
-  getInvestorTransactions(investorId).filter(
-    (transaction) => transaction.type === "Loan Allocation"
-  );
 
 export { InvestorError };
