@@ -22,11 +22,18 @@ import {
 } from "react-router-dom";
 
 import useDashboardData from "../../hooks/dashboard/useDashboardData";
+import useDashboardMetrics from "../../hooks/dashboard/useDashboardMetrics";
 
 import DashboardHeader from "../../components/dashboard/DashboardHeader";
-import FinancialOverview from "../../components/dashboard/FinancialOverview/FinancialOverview";
-import KeyActivity from "../../components/dashboard/KeyActivity/KeyActivity";
-import PortfolioRisk from "../../components/dashboard/PortfolioRisk/PortfolioRisk";
+import KpiStrip from "../../components/dashboard/overview/KpiStrip";
+import CollectionPerformanceCard from "../../components/dashboard/overview/CollectionPerformanceCard";
+import LoanPortfolioCard from "../../components/dashboard/overview/LoanPortfolioCard";
+import RepaymentHealthCard from "../../components/dashboard/overview/RepaymentHealthCard";
+import LoanActivityCard from "../../components/dashboard/overview/LoanActivityCard";
+import CustomerBaseCard from "../../components/dashboard/overview/CustomerBaseCard";
+import MoneyMovementCard from "../../components/dashboard/overview/MoneyMovementCard";
+import NeedsAttentionCard from "../../components/dashboard/overview/NeedsAttentionCard";
+import PortfolioRiskCard from "../../components/dashboard/overview/PortfolioRiskCard";
 
 /* =========================================================
    DASHBOARD
@@ -43,6 +50,9 @@ const Dashboard = () => {
   const {
     loading,
     loans,
+    customers,
+    collections,
+    expenses,
 
     totalCustomers,
     totalLoans,
@@ -89,6 +99,23 @@ const Dashboard = () => {
     overdueCollectionTodayAmount,
     todayScheduledDueAmount,
   } = useDashboardData();
+
+  const metrics = useDashboardMetrics({
+    loans,
+    customers,
+    collections,
+    expenses,
+    activeLoans,
+    closedLoans,
+    overdueLoanCount,
+    overdueAmount,
+    totalCustomers,
+    followUpQueue,
+    ptpDue,
+  });
+
+  const overduePctOfPortfolio =
+    totalOutstanding > 0 ? Math.min(100, (overdueAmount / totalOutstanding) * 100) : 0;
 
   /* =========================================================
      TODAY'S FOLLOW-UP
@@ -264,9 +291,6 @@ const Dashboard = () => {
         overflow-x-hidden
         bg-[#F7F9F8]
         pt-14
-        lg:h-screen
-        lg:min-h-0
-        lg:overflow-hidden
         lg:pt-0
       "
     >
@@ -300,139 +324,112 @@ const Dashboard = () => {
           overflow-y-auto
           overflow-x-hidden
           px-3
-          py-2
+          py-3
           sm:px-4
-          lg:overflow-hidden
           lg:px-5
         "
       >
         <div
           className="
             flex
-            h-full
-            min-h-0
-            min-w-0
             w-full
             max-w-full
             flex-col
-            gap-2
-            lg:overflow-hidden
+            gap-3
+            pb-6
           "
         >
           {/* =================================================
-              FINANCIAL OVERVIEW
+              KPI STRIP
           ================================================== */}
 
-          <FinancialOverview
-            collectionVsDue={
-              collectionVsDue
-            }
-            cashBankUpi={
-              cashBankUpi
-            }
-            cashPosition={
-              cashPosition
-            }
-            pendingActions={
-              pendingActions
-            }
+          <KpiStrip
+            monthCollected={metrics.monthCollected}
+            monthDue={metrics.monthDue}
+            totalOutstanding={totalOutstanding}
+            overdueAmount={overdueAmount}
+            overduePctOfPortfolio={overduePctOfPortfolio}
+            collectionRate={metrics.collectionRate}
+            activeLoans={activeLoans}
+            cashPosition={cashPosition}
           />
 
           {/* =================================================
-              KEY ACTIVITY
+              COLLECTION PERFORMANCE + LOAN PORTFOLIO
           ================================================== */}
 
-          <KeyActivity
-            newLoansToday={
-              newLoansToday
-            }
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">
+            <div className="xl:col-span-3">
+              <CollectionPerformanceCard
+                weeklyTrend={metrics.weeklyTrend}
+                monthCollected={metrics.monthCollected}
+                monthDue={metrics.monthDue}
+                collectionRate={metrics.collectionRate}
+              />
+            </div>
 
-            emiDueCount={
-              emiDueCount
-            }
-
-            emiDueAmount={
-              emiDueAmount
-            }
-
-            overdueCount={
-              overdueLoanCount
-            }
-
-            overdueAmount={
-              overdueAmount
-            }
-
-            pendingCount={
-              pendingLoans
-            }
-
-            ptpDueCount={
-              ptpDue?.count ||
-              0
-            }
-
-            ptpDueAmount={
-              ptpDue?.amount ||
-              0
-            }
-
-            closedLoans={
-              closedLoans
-            }
-
-            closedAmount={
-              0
-            }
-
-            /* TODAY'S PAID EXPENSE ONLY */
-            expenses={
-              todayExpenseAmount
-            }
-          />
+            <div className="xl:col-span-2">
+              <LoanPortfolioCard
+                composition={metrics.portfolioComposition}
+                totalLoans={metrics.totalLoansForComposition}
+                outstandingByVehicleType={metrics.outstandingByVehicleType}
+              />
+            </div>
+          </div>
 
           {/* =================================================
-              CURRENT PORTFOLIO & RISK
+              REPAYMENT HEALTH + LOAN ACTIVITY + CUSTOMER BASE
           ================================================== */}
 
-          <div
-            className="
-              min-h-0
-              w-full
-            "
-          >
-            <PortfolioRisk
-              totalOutstanding={
-                totalOutstanding
-              }
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+            <RepaymentHealthCard
+              weeklyTrend={metrics.weeklyTrend}
+              monthDue={metrics.monthDue}
+              monthCollected={metrics.monthCollected}
+              overdueAmount={overdueAmount}
+              ptpAmount={ptpDue?.amount || 0}
+            />
 
-              activeLoans={
-                activeLoans
-              }
+            <LoanActivityCard
+              newLoans={metrics.loanActivityThisMonth.newLoans}
+              reLoans={metrics.loanActivityThisMonth.reLoans}
+            />
 
-              overdueAmount={
-                overdueAmount
-              }
+            <CustomerBaseCard
+              total={metrics.customerBase.total}
+              newThisMonth={metrics.customerBase.newThisMonth}
+              activeBorrowers={metrics.customerBase.activeBorrowers}
+              newGrowthPct={metrics.customerBase.newGrowthPct}
+              activeGrowthPct={metrics.customerBase.activeGrowthPct}
+            />
+          </div>
 
-              overdueLoanCount={
-                overdueLoanCount
-              }
+          {/* =================================================
+              MONEY MOVEMENT + NEEDS ATTENTION + PORTFOLIO RISK
+          ================================================== */}
 
-              loans={
-                loans
-              }
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+            <MoneyMovementCard
+              cash={cashBankUpi?.cash || 0}
+              bank={cashBankUpi?.bank || 0}
+              upi={cashBankUpi?.upi || 0}
+              dailyExpenseTrend={metrics.dailyExpenseTrend}
+              monthExpenseTotal={metrics.monthExpenseTotal}
+            />
 
-              overduePayments={
-                overduePayments
-              }
+            <NeedsAttentionCard
+              overdueCount={metrics.needsAttention.overdueCount}
+              overdueAmount={metrics.needsAttention.overdueAmount}
+              followUpCount={metrics.needsAttention.followUpCount}
+              ptpCount={metrics.needsAttention.ptpCount}
+              ptpAmount={metrics.needsAttention.ptpAmount}
+              onNavigate={navigate}
+            />
 
-              overdueCollectionTodayAmount={
-                overdueCollectionTodayAmount
-              }
-
-              todayScheduledDueAmount={
-                todayScheduledDueAmount
-              }
+            <PortfolioRiskCard
+              overdueAmount={overdueAmount}
+              overduePctOfPortfolio={overduePctOfPortfolio}
+              agingBuckets={metrics.agingBuckets}
             />
           </div>
         </div>
