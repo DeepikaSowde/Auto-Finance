@@ -31,13 +31,13 @@ const ChartTooltip = ({ active, payload, label }) => {
   );
 };
 
-const CollectionPerformanceCard = ({ weeklyTrend = [], monthCollected = 0, monthDue = 0, collectionRate = 0 }) => {
+const CollectionPerformanceCard = ({ weeklyTrend = [], monthCollected = 0, monthDue = 0, collectionRate = 0, periodLabel = "This Month" }) => {
   return (
     <CardShell
       icon={TrendingUp}
       title="Collection Performance"
       subtitle="Collection trend and due payment"
-      right={<span className="text-[9px] font-medium text-slate-400">This Month</span>}
+      right={<span className="text-[9px] font-medium text-slate-400">{periodLabel}</span>}
     >
       <div className="flex h-full flex-col gap-3 lg:flex-row">
         <div className="min-w-0 flex-1">

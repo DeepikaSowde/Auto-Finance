@@ -2,8 +2,8 @@
 
 import { Router } from "express";
 
-import { login, logout } from "../services/auth.js";
-import { requireAuth } from "../middleware/requireAuth.js";
+import { createUser, deleteUser, getUsers, login, logout } from "../services/auth.js";
+import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import { asyncHandler } from "../util/asyncHandler.js";
 
 export const authRouter = Router();
@@ -38,3 +38,38 @@ authRouter.post(
 authRouter.get("/me", requireAuth, (req, res) => {
   res.json({ user: req.user });
 });
+
+/* =========================================================
+   USER MANAGEMENT (admin-only)
+========================================================= */
+
+authRouter.get(
+  "/users",
+  requireAuth,
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    res.json(await getUsers());
+  })
+);
+
+authRouter.post(
+  "/users",
+  requireAuth,
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await createUser(req.body || {}));
+  })
+);
+
+authRouter.delete(
+  "/users/:userId",
+  requireAuth,
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    if (!(await deleteUser(req.params.userId, req.user.userId))) {
+      return res.status(404).json({ error: "User not found." });
+    }
+
+    res.status(204).send();
+  })
+);

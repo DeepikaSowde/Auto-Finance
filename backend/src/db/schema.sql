@@ -376,3 +376,49 @@ CREATE TABLE IF NOT EXISTS reloan_eligibility_checks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_reloan_checks_loan ON reloan_eligibility_checks (loan_pk);
+
+/* =========================================================
+   INCOME
+
+   Manual, non-loan income — mirrors "expenses" so the two can
+   share the same list/form/report patterns.
+========================================================= */
+
+CREATE TABLE IF NOT EXISTS incomes (
+  pk             INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id             TEXT UNIQUE NOT NULL,
+  amount         NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  status         TEXT NOT NULL DEFAULT 'Received',
+  category       TEXT,
+  sub_category   TEXT,
+  income_date    TEXT,
+  payment_mode   TEXT,
+  received_from  TEXT,
+  reference      TEXT,
+  description    TEXT,
+  remarks        TEXT,
+  details        JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_by     TEXT,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_incomes_status ON incomes (status);
+CREATE INDEX IF NOT EXISTS idx_incomes_date ON incomes (income_date);
+
+/* =========================================================
+   CATEGORIES
+
+   User-managed category lists for income/expense forms, kept
+   separate from whatever categories already exist on past
+   records so a category can be added before it's ever used.
+========================================================= */
+
+CREATE TABLE IF NOT EXISTS categories (
+  pk          INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id          TEXT UNIQUE NOT NULL,
+  type        TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+  name        TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (type, name)
+);

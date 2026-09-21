@@ -56,20 +56,21 @@ const KpiStrip = ({
   collectionRate = 0,
   activeLoans = 0,
   cashPosition = 0,
+  periodLabel = "This Month",
 }) => {
   return (
     <div className="flex flex-wrap gap-3">
       <Tile
         icon={CircleDollarSign}
         tone="green"
-        label="Collected (This Month)"
+        label={`Collected (${periodLabel})`}
         value={formatINR(monthCollected)}
       />
 
       <Tile
         icon={CalendarClock}
         tone="amber"
-        label="Due (This Month)"
+        label={`Due (${periodLabel})`}
         value={formatINR(monthDue)}
       />
 

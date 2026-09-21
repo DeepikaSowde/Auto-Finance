@@ -47,6 +47,9 @@ const Dashboard = () => {
     setQuickActionsOpen,
   ] = useState(false);
 
+  const [period, setPeriod] = useState("month");
+  const [customRange, setCustomRange] = useState({ start: "", end: "" });
+
   const {
     loading,
     loans,
@@ -112,6 +115,8 @@ const Dashboard = () => {
     totalCustomers,
     followUpQueue,
     ptpDue,
+    period,
+    customRange,
   });
 
   const overduePctOfPortfolio =
@@ -308,6 +313,10 @@ const Dashboard = () => {
         onLogout={
           handleLogout
         }
+        period={period}
+        onPeriodChange={setPeriod}
+        customRange={customRange}
+        onCustomRangeChange={setCustomRange}
       />
 
       {/* =================================================
@@ -352,6 +361,7 @@ const Dashboard = () => {
             collectionRate={metrics.collectionRate}
             activeLoans={activeLoans}
             cashPosition={cashPosition}
+            periodLabel={metrics.periodLabel}
           />
 
           {/* =================================================
@@ -365,6 +375,7 @@ const Dashboard = () => {
                 monthCollected={metrics.monthCollected}
                 monthDue={metrics.monthDue}
                 collectionRate={metrics.collectionRate}
+                periodLabel={metrics.periodLabel}
               />
             </div>
 
@@ -393,6 +404,7 @@ const Dashboard = () => {
             <LoanActivityCard
               newLoans={metrics.loanActivityThisMonth.newLoans}
               reLoans={metrics.loanActivityThisMonth.reLoans}
+              periodLabel={metrics.periodLabel}
             />
 
             <CustomerBaseCard

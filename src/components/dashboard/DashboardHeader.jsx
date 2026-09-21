@@ -7,10 +7,16 @@ import {
 } from "lucide-react";
 import { LogOut } from "lucide-react";
 
+import { PERIOD_OPTIONS } from "../../hooks/dashboard/useDashboardMetrics";
+
 const DashboardHeader = ({
   customerCount = 0,
   loanCount = 0,
-   onLogout,
+  onLogout,
+  period = "month",
+  onPeriodChange = () => {},
+  customRange = {},
+  onCustomRangeChange = () => {},
 }) => {
   const today = new Date();
 
@@ -158,15 +164,36 @@ const DashboardHeader = ({
               md:flex
             "
           >
-            <HeaderSelect
-              label="Period"
-              value="Today"
-            />
+            <PeriodSelect value={period} onChange={onPeriodChange} />
 
-            <HeaderSelect
-              label="Month"
-              value={formattedMonth}
-            />
+            {period === "custom" ? (
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  value={customRange.start || ""}
+                  onChange={(event) =>
+                    onCustomRangeChange({ ...customRange, start: event.target.value })
+                  }
+                  className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-semibold text-[#17221D] outline-none focus:border-[#9CCEB1]"
+                />
+
+                <span className="text-[9px] text-slate-400">to</span>
+
+                <input
+                  type="date"
+                  value={customRange.end || ""}
+                  onChange={(event) =>
+                    onCustomRangeChange({ ...customRange, end: event.target.value })
+                  }
+                  className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-semibold text-[#17221D] outline-none focus:border-[#9CCEB1]"
+                />
+              </div>
+            ) : (
+              <HeaderSelect
+                label="Month"
+                value={formattedMonth}
+              />
+            )}
           </div>
 
           <button
@@ -248,6 +275,60 @@ const DashboardHeader = ({
         </div>
       </div>
     </header>
+  );
+};
+
+/* =========================================================
+   PERIOD SELECT
+========================================================= */
+
+const PeriodSelect = ({ value, onChange }) => {
+  return (
+    <div
+      className="
+        relative
+        flex
+        h-9
+        min-w-[110px]
+        items-center
+        gap-2
+        rounded-lg
+        border
+        border-slate-200
+        bg-white
+        pl-3
+        pr-2
+        transition
+        hover:border-slate-300
+        hover:bg-slate-50
+        lg:min-w-[130px]
+      "
+    >
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label="Period"
+        className="
+          h-full
+          w-full
+          cursor-pointer
+          appearance-none
+          bg-transparent
+          text-[10px]
+          font-semibold
+          text-[#17221D]
+          outline-none
+        "
+      >
+        {PERIOD_OPTIONS.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+
+      <ChevronDown size={12} className="pointer-events-none absolute right-2 shrink-0 text-slate-400" />
+    </div>
   );
 };
 

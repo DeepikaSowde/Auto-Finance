@@ -8,7 +8,7 @@ import { FileStack, FilePlus2, RefreshCcw } from "lucide-react";
 
 import CardShell from "./CardShell";
 
-const LoanActivityCard = ({ newLoans = 0, reLoans = 0 }) => {
+const LoanActivityCard = ({ newLoans = 0, reLoans = 0, periodLabel = "This Month" }) => {
   const total = newLoans + reLoans;
   const newPct = total > 0 ? Math.round((newLoans / total) * 100) : 0;
   const rePct = total > 0 ? 100 - newPct : 0;
@@ -17,8 +17,8 @@ const LoanActivityCard = ({ newLoans = 0, reLoans = 0 }) => {
     <CardShell
       icon={FileStack}
       title="Loan Activity"
-      subtitle="New disbursements this month"
-      right={<span className="text-[9px] font-medium text-slate-400">This Month</span>}
+      subtitle="New disbursements in range"
+      right={<span className="text-[9px] font-medium text-slate-400">{periodLabel}</span>}
     >
       <div className="flex h-full flex-col justify-center gap-4">
         <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-[#EAF5EF]">

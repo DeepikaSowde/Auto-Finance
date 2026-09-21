@@ -131,6 +131,11 @@ const NAV_ITEMS = [
       },
 
       {
+        id: "income",
+        label: "Income",
+      },
+
+      {
         id: "expense-control",
         label: "Expense",
       },
@@ -204,6 +209,7 @@ const SideBar = ({
       : activeItem === "investor" ||
           activeItem ===
             "expense-control" ||
+          activeItem === "income" ||
           activeItem === "ledger"
         ? "operations-accounts"
         : activeItem?.startsWith?.(

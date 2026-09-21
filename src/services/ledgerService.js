@@ -3,6 +3,7 @@
 import { getCustomers } from "./customerStorage";
 import { getCollections } from "./collectionStorage";
 import { getExpenses } from "./expenseStorage";
+import { getIncomes } from "./incomeStorage";
 import { getSession } from "./authStorage";
 import { getVehicleRecords } from "./vehicleStorage";
 
@@ -693,6 +694,103 @@ const expenseTransaction = (
 });
 
 /* =========================================================
+   MANUAL INCOME → LEDGER INCOME
+========================================================= */
+
+const manualIncomeTransaction = (
+  income,
+  session
+) => ({
+  id:
+    income?.id ||
+    income?.reference ||
+    `income-${income?.date || income?.amount}`,
+
+  kind: "income",
+
+  type: "Income",
+
+  date:
+    income?.date ||
+    income?.incomeDate ||
+    income?.createdAt,
+
+  dateKey:
+    dateKey(
+      income?.date ||
+        income?.incomeDate ||
+        income?.createdAt
+    ),
+
+  amount:
+    roundMoney(
+      income?.amount
+    ),
+
+  source:
+    income?.category ||
+    "Income",
+
+  category:
+    income?.category ||
+    "",
+
+  reference:
+    income?.reference ||
+    income?.id ||
+    "",
+
+  loanNumber:
+    "",
+
+  customerName:
+    "",
+
+  customerId:
+    "",
+
+  mobile:
+    "",
+
+  description:
+    income?.description ||
+    "",
+
+  paymentMode:
+    income?.paymentMode ||
+    "",
+
+  status:
+    income?.status ||
+    "",
+
+  collectedBy:
+    income?.createdBy ||
+    income?.recordedBy ||
+    session?.name ||
+    "",
+
+  remarks:
+    income?.remarks ||
+    "",
+
+  breakdown:
+    null,
+
+  total:
+    roundMoney(
+      income?.amount
+    ),
+
+  vendor:
+    income?.receivedFrom ||
+    "",
+
+  raw:
+    income,
+});
+
+/* =========================================================
    GET ALL LEDGER TRANSACTIONS
 ========================================================= */
 
@@ -744,6 +842,21 @@ export const getLedgerTransactions = async () => {
       .filter(Boolean);
 
   /*
+   * MANUAL INCOME
+   *
+   * Non-loan income logged directly on the
+   * Income page (referrals, misc revenue, etc).
+   */
+  const manualIncomes =
+    (await getIncomes()).map(
+      (income) =>
+        manualIncomeTransaction(
+          income,
+          session
+        )
+    );
+
+  /*
    * NORMAL EXPENSES
    *
    * Existing expense logic
@@ -761,6 +874,7 @@ export const getLedgerTransactions = async () => {
   return [
     ...incomes,
     ...vehicleSaleIncome,
+    ...manualIncomes,
     ...expenses,
   ].filter(
     (transaction) =>

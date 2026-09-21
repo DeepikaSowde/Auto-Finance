@@ -1,6 +1,7 @@
 // src/pages/settings/Settings.jsx
 
 import {
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -23,7 +24,15 @@ import {
   Info,
   ChevronRight,
   LockKeyhole,
+  Tags,
+  UserCog,
+  Plus,
+  Trash2,
 } from "lucide-react";
+
+import { getCategories, addCategory, deleteCategory } from "../../services/categoryStorage";
+import { getUsers, createUser, deleteUser } from "../../services/userStorage";
+import { useToast } from "../../context/ToastContext";
 
 /* =========================================================
    DEFAULT DEMO SETTINGS
@@ -195,6 +204,18 @@ const SECTIONS = [
     label: "Security",
     description: "Account protection",
     icon: ShieldCheck,
+  },
+  {
+    id: "categories",
+    label: "Categories",
+    description: "Income & expense categories",
+    icon: Tags,
+  },
+  {
+    id: "admins",
+    label: "Admins",
+    description: "Manage user accounts",
+    icon: UserCog,
   },
 ];
 
@@ -811,42 +832,49 @@ const Settings = () => {
                 />
               )}
 
+              {activeSection === "categories" && <CategoriesSection />}
+
+              {activeSection === "admins" && <AdminsSection />}
+
               {/* =================================================
                   INFO
               ================================================== */}
 
-              <div
-                className="
-                  mt-5
-                  flex
-                  items-start
-                  gap-2
-                  rounded-xl
-                  border
-                  border-blue-100
-                  bg-blue-50
-                  px-3.5
-                  py-3
-                "
-              >
-                <Info
-                  size={13}
-                  className="mt-0.5 shrink-0 text-blue-600"
-                />
+              {activeSection !== "categories" && activeSection !== "admins" && (
+                <div
+                  className="
+                    mt-5
+                    flex
+                    items-start
+                    gap-2
+                    rounded-xl
+                    border
+                    border-blue-100
+                    bg-blue-50
+                    px-3.5
+                    py-3
+                  "
+                >
+                  <Info
+                    size={13}
+                    className="mt-0.5 shrink-0 text-blue-600"
+                  />
 
-                <p className="text-[8px] leading-4 text-blue-700/80">
-                  These settings are currently
-                  demo controls only. Changes
-                  are available during this
-                  session but are not stored and
-                  do not affect the application's
-                  business logic.
-                </p>
-              </div>
+                  <p className="text-[8px] leading-4 text-blue-700/80">
+                    These settings are currently
+                    demo controls only. Changes
+                    are available during this
+                    session but are not stored and
+                    do not affect the application's
+                    business logic.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* SAVE BAR */}
 
+            {activeSection !== "categories" && activeSection !== "admins" && (
             <div
               className="
                 flex
@@ -946,10 +974,286 @@ const Settings = () => {
                 </button>
               </div>
             </div>
+            )}
           </div>
         </section>
       </div>
     </div>
+  );
+};
+
+/* =========================================================
+   CATEGORIES — real, persisted (unlike the rest of this page)
+========================================================= */
+
+const CategoriesSection = () => {
+  const toast = useToast();
+
+  const [type, setType] = useState("expense");
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const load = async (activeType) => {
+    setLoading(true);
+    setCategories(await getCategories(activeType));
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    load(type);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type]);
+
+  const handleAdd = async (event) => {
+    event.preventDefault();
+
+    const cleanName = name.trim();
+
+    if (!cleanName) return;
+
+    setSaving(true);
+
+    try {
+      await addCategory(type, cleanName);
+      setName("");
+      await load(type);
+      toast.success(`Category "${cleanName}" added.`);
+    } catch (error) {
+      toast.error(error.message || "Couldn't add category.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (category) => {
+    try {
+      await deleteCategory(category.id);
+      await load(type);
+      toast.success(`Category "${category.name}" removed.`);
+    } catch (error) {
+      toast.error(error.message || "Couldn't remove category.");
+    }
+  };
+
+  return (
+    <SettingsGroup
+      title="Income & Expense Categories"
+      description="Categories offered on the Income and Expense forms. Changes here are saved immediately."
+    >
+      <div className="mb-4 flex gap-1 rounded-lg border border-slate-200 bg-white p-1 w-fit">
+        {["expense", "income"].map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => setType(option)}
+            className={`rounded-md px-3 py-1.5 text-[9px] font-bold capitalize ${
+              type === option ? "bg-[#EAF5EF] text-[#0B6B43]" : "text-slate-500"
+            }`}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+
+      <form onSubmit={handleAdd} className="mb-4 flex gap-2">
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder={`New ${type} category name...`}
+          className="h-9 flex-1 rounded-lg border border-slate-200 px-3 text-xs outline-none focus:border-[#9CCEB1]"
+        />
+
+        <button
+          type="submit"
+          disabled={saving || !name.trim()}
+          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[#0B5D3B] px-3.5 text-[10px] font-bold text-white disabled:opacity-50"
+        >
+          <Plus size={13} /> Add
+        </button>
+      </form>
+
+      {loading ? (
+        <p className="text-[10px] text-slate-400">Loading...</p>
+      ) : categories.length === 0 ? (
+        <p className="text-[10px] text-slate-400">No {type} categories yet.</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {categories.map((category) => (
+            <span
+              key={category.id}
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 py-1 pl-3 pr-1.5 text-[10px] font-semibold text-slate-600"
+            >
+              {category.name}
+
+              <button
+                type="button"
+                onClick={() => handleDelete(category)}
+                className="rounded-full p-0.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                aria-label={`Remove ${category.name}`}
+              >
+                <Trash2 size={10} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </SettingsGroup>
+  );
+};
+
+/* =========================================================
+   ADMINS — real, persisted (unlike the rest of this page)
+========================================================= */
+
+const AdminsSection = () => {
+  const toast = useToast();
+
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ username: "", password: "", name: "", role: "staff" });
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    setUsers(await getUsers());
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+
+  const handleCreate = async (event) => {
+    event.preventDefault();
+
+    setSaving(true);
+
+    try {
+      await createUser(form);
+      setForm({ username: "", password: "", name: "", role: "staff" });
+      await load();
+      toast.success(`${form.name} added as ${form.role}.`);
+    } catch (error) {
+      toast.error(error.message || "Couldn't add this user.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (user) => {
+    try {
+      await deleteUser(user.id);
+      await load();
+      toast.success(`${user.name} removed.`);
+    } catch (error) {
+      toast.error(error.message || "Couldn't remove this user.");
+    }
+  };
+
+  return (
+    <SettingsGroup
+      title="Admin & Staff Accounts"
+      description="Users who can sign in to this app. Changes here are saved immediately."
+    >
+      <form onSubmit={handleCreate} className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <input
+          required
+          value={form.name}
+          onChange={(event) => update("name", event.target.value)}
+          placeholder="Full name"
+          className="h-9 rounded-lg border border-slate-200 px-3 text-xs outline-none focus:border-[#9CCEB1]"
+        />
+
+        <input
+          required
+          value={form.username}
+          onChange={(event) => update("username", event.target.value)}
+          placeholder="Username"
+          className="h-9 rounded-lg border border-slate-200 px-3 text-xs outline-none focus:border-[#9CCEB1]"
+        />
+
+        <input
+          required
+          type="password"
+          value={form.password}
+          onChange={(event) => update("password", event.target.value)}
+          placeholder="Password"
+          className="h-9 rounded-lg border border-slate-200 px-3 text-xs outline-none focus:border-[#9CCEB1]"
+        />
+
+        <div className="flex gap-2">
+          <select
+            value={form.role}
+            onChange={(event) => update("role", event.target.value)}
+            className="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-[#9CCEB1]"
+          >
+            <option value="staff">Staff</option>
+            <option value="admin">Admin</option>
+          </select>
+
+          <button
+            type="submit"
+            disabled={saving}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[#0B5D3B] px-3 text-[10px] font-bold text-white disabled:opacity-50"
+          >
+            <Plus size={13} /> Add
+          </button>
+        </div>
+      </form>
+
+      {loading ? (
+        <p className="text-[10px] text-slate-400">Loading...</p>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-slate-200">
+          <table className="w-full text-left">
+            <thead className="bg-slate-50 text-[9px] font-bold uppercase tracking-wide text-slate-400">
+              <tr>
+                {["Name", "Username", "Role", ""].map((header) => (
+                  <th key={header} className="px-3 py-2">
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.id} className="border-t border-slate-100">
+                  <td className="px-3 py-2.5 text-xs font-semibold text-[#17221D]">{user.name}</td>
+
+                  <td className="px-3 py-2.5 text-xs text-slate-500">{user.username}</td>
+
+                  <td className="px-3 py-2.5">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[9px] font-bold capitalize ${
+                        user.role === "admin" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {user.role}
+                    </span>
+                  </td>
+
+                  <td className="px-3 py-2.5 text-right">
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(user)}
+                      className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                      aria-label={`Remove ${user.name}`}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </SettingsGroup>
   );
 };
 

@@ -21,6 +21,18 @@ import {
   updateExpense,
 } from "../services/expenseRepository.js";
 import {
+  addIncome,
+  deleteIncome,
+  getIncomeById,
+  getIncomes,
+  updateIncome,
+} from "../services/incomeRepository.js";
+import {
+  addCategory,
+  deleteCategory,
+  getCategories,
+} from "../services/categoryRepository.js";
+import {
   getEligibilityChecks,
   getReLoanRules,
   saveEligibilityCheck,
@@ -150,6 +162,101 @@ expensesRouter.delete(
   asyncHandler(async (req, res) => {
     if (!(await deleteExpense(req.params.expenseId))) {
       return res.status(404).json({ error: "Expense not found." });
+    }
+
+    res.status(204).send();
+  })
+);
+
+/* =========================================================
+   INCOME
+========================================================= */
+
+export const incomesRouter = Router();
+
+incomesRouter.get(
+  "/",
+  asyncHandler(async (req, res) => {
+    res.json(await getIncomes());
+  })
+);
+
+incomesRouter.get(
+  "/:incomeId",
+  asyncHandler(async (req, res) => {
+    const income = await getIncomeById(req.params.incomeId);
+
+    if (!income) {
+      return res.status(404).json({ error: "Income not found." });
+    }
+
+    res.json(income);
+  })
+);
+
+incomesRouter.post(
+  "/",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await addIncome(req.body || {}));
+  })
+);
+
+incomesRouter.put(
+  "/:incomeId",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const income = await updateIncome(req.params.incomeId, req.body || {});
+
+    if (!income) {
+      return res.status(404).json({ error: "Income not found." });
+    }
+
+    res.json(income);
+  })
+);
+
+incomesRouter.delete(
+  "/:incomeId",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    if (!(await deleteIncome(req.params.incomeId))) {
+      return res.status(404).json({ error: "Income not found." });
+    }
+
+    res.status(204).send();
+  })
+);
+
+/* =========================================================
+   CATEGORIES
+========================================================= */
+
+export const categoriesRouter = Router();
+
+categoriesRouter.get(
+  "/",
+  asyncHandler(async (req, res) => {
+    res.json(await getCategories(req.query.type));
+  })
+);
+
+categoriesRouter.post(
+  "/",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const { type, name } = req.body || {};
+
+    res.status(201).json(await addCategory(type, name));
+  })
+);
+
+categoriesRouter.delete(
+  "/:categoryId",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    if (!(await deleteCategory(req.params.categoryId))) {
+      return res.status(404).json({ error: "Category not found." });
     }
 
     res.status(204).send();

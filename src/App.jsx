@@ -84,6 +84,19 @@ import {
 } from "./services/authStorage";
 
 /* =========================================================
+   TOASTS
+========================================================= */
+
+import { ToastProvider } from "./context/ToastContext";
+import Toaster from "./components/Toaster";
+
+/* =========================================================
+   INCOME
+========================================================= */
+
+import Income from "./pages/income/Income";
+
+/* =========================================================
    APP LAYOUT
 ========================================================= */
 
@@ -222,6 +235,14 @@ const AppLayout = () => {
       )
     ) {
       return "investor";
+    }
+
+    if (
+      path.startsWith(
+        "/income"
+      )
+    ) {
+      return "income";
     }
 
     if (
@@ -373,6 +394,12 @@ const AppLayout = () => {
       case "investor":
         navigate(
           "/investor"
+        );
+        break;
+
+      case "income":
+        navigate(
+          "/income"
         );
         break;
 
@@ -701,6 +728,19 @@ const AppLayout = () => {
           />
 
           {/* =================================================
+              INCOME
+          ================================================== */}
+
+          <Route
+            path="/income"
+            element={
+              <ProtectedRoute role="admin">
+                <Income />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* =================================================
               INVESTOR FUNDING
           ================================================== */}
 
@@ -844,9 +884,13 @@ const AppLayout = () => {
 
 const App = () => {
   return (
-    <BrowserRouter>
-      <AppLayout />
-    </BrowserRouter>
+    <ToastProvider>
+      <BrowserRouter>
+        <AppLayout />
+      </BrowserRouter>
+
+      <Toaster />
+    </ToastProvider>
   );
 };
 

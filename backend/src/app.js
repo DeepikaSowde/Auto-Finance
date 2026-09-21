@@ -10,7 +10,9 @@ import { loansRouter } from "./routes/loans.js";
 import { vehiclesRouter } from "./routes/vehicles.js";
 import { collectionsRouter } from "./routes/collections.js";
 import {
+  categoriesRouter,
   expensesRouter,
+  incomesRouter,
   investorsRouter,
   reloanRouter,
 } from "./routes/finance.js";
@@ -34,6 +36,8 @@ export const createApp = () => {
   app.use("/api/collections", requireAuth, collectionsRouter);
   app.use("/api/investors", requireAuth, investorsRouter);
   app.use("/api/expenses", requireAuth, expensesRouter);
+  app.use("/api/incomes", requireAuth, incomesRouter);
+  app.use("/api/categories", requireAuth, categoriesRouter);
   app.use("/api/reloan", requireAuth, reloanRouter);
 
   app.use((req, res) => {

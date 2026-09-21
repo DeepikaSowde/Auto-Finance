@@ -3,10 +3,19 @@
 // Derived metrics for the redesigned Dashboard page. Built on top of the
 // raw arrays useDashboardData() already loads (loans, collections,
 // expenses, customers) rather than duplicating its fetch/normalize logic.
-// Everything here is month-scoped or grouped in ways the base hook
-// doesn't already provide.
+// Everything here is scoped to a selectable period (Today / This Week /
+// This Month / Last 6 Months / This Year / Custom Range).
 
 import { useMemo } from "react";
+
+export const PERIOD_OPTIONS = [
+  { id: "today", label: "Today" },
+  { id: "week", label: "This Week" },
+  { id: "month", label: "This Month" },
+  { id: "6months", label: "Last 6 Months" },
+  { id: "year", label: "This Year" },
+  { id: "custom", label: "Custom Range" },
+];
 
 const normalizeStatus = (value) =>
   String(value || "")
@@ -20,25 +29,121 @@ const collectionDateOf = (collection) =>
   collection?.approvedAt ||
   null;
 
-const isSameMonth = (value, reference) => {
+const startOfDay = (date) => {
+  const clone = new Date(date);
+
+  clone.setHours(0, 0, 0, 0);
+
+  return clone;
+};
+
+const endOfDay = (date) => {
+  const clone = new Date(date);
+
+  clone.setHours(23, 59, 59, 999);
+
+  return clone;
+};
+
+export const getPeriodRange = (period, now = new Date(), customRange = {}) => {
+  const today = startOfDay(now);
+
+  switch (period) {
+    case "today":
+      return { start: today, end: endOfDay(now) };
+
+    case "week": {
+      const start = new Date(today);
+
+      start.setDate(start.getDate() - 6);
+
+      return { start, end: endOfDay(now) };
+    }
+
+    case "6months": {
+      const start = new Date(today.getFullYear(), today.getMonth() - 5, 1);
+
+      return { start, end: endOfDay(now) };
+    }
+
+    case "year": {
+      const start = new Date(today.getFullYear(), 0, 1);
+
+      return { start, end: endOfDay(now) };
+    }
+
+    case "custom": {
+      const start = customRange.start ? startOfDay(new Date(customRange.start)) : today;
+      const end = customRange.end ? endOfDay(new Date(customRange.end)) : endOfDay(now);
+
+      return { start, end };
+    }
+
+    case "month":
+    default: {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1);
+
+      return { start, end: endOfDay(now) };
+    }
+  }
+};
+
+const isInRange = (value, range) => {
   if (!value) return false;
 
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) return false;
 
-  return (
-    date.getFullYear() === reference.getFullYear() &&
-    date.getMonth() === reference.getMonth()
-  );
+  return date >= range.start && date <= range.end;
 };
 
-const weekOfMonth = (value) => {
+const rangeSpanDays = (range) =>
+  Math.max(1, Math.round((range.end - range.start) / (1000 * 60 * 60 * 24)) + 1);
+
+// Short-span ranges (<=45 days) bucket by day; longer ones bucket by
+// month, so a year-long range doesn't render 365 bars.
+const bucketKeyFor = (value, range) => {
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) return null;
 
-  return Math.min(4, Math.ceil(date.getDate() / 7));
+  if (rangeSpanDays(range) <= 45) {
+    return date.toISOString().slice(0, 10);
+  }
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+};
+
+const bucketLabelFor = (key, range) => {
+  if (rangeSpanDays(range) <= 45) {
+    const date = new Date(key);
+
+    return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+  }
+
+  const [year, month] = key.split("-").map(Number);
+
+  return new Date(year, month - 1, 1).toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+};
+
+const buildBucketKeys = (range) => {
+  const keys = [];
+  const daily = rangeSpanDays(range) <= 45;
+  const cursor = new Date(range.start);
+
+  while (cursor <= range.end) {
+    keys.push(bucketKeyFor(cursor, range));
+
+    cursor.setDate(cursor.getDate() + (daily ? 1 : 0));
+
+    if (!daily) {
+      cursor.setMonth(cursor.getMonth() + 1);
+      cursor.setDate(1);
+    }
+  }
+
+  return [...new Set(keys)];
 };
 
 const dayKey = (value) => {
@@ -47,6 +152,15 @@ const dayKey = (value) => {
   if (Number.isNaN(date.getTime())) return null;
 
   return date.toISOString().slice(0, 10);
+};
+
+const PERIOD_LABELS = {
+  today: "Today",
+  week: "This Week",
+  month: "This Month",
+  "6months": "Last 6 Months",
+  year: "This Year",
+  custom: "Selected Range",
 };
 
 const useDashboardMetrics = ({
@@ -61,36 +175,39 @@ const useDashboardMetrics = ({
   totalCustomers = 0,
   followUpQueue = [],
   ptpDue = { count: 0, amount: 0 },
+  period = "month",
+  customRange = {},
 } = {}) => {
   const now = useMemo(() => new Date(), []);
 
+  const range = useMemo(() => getPeriodRange(period, now, customRange), [period, now, customRange]);
+
+  const periodLabel = PERIOD_LABELS[period] || PERIOD_LABELS.month;
+
   /* =======================================================
-     APPROVED COLLECTIONS THIS MONTH
+     APPROVED COLLECTIONS IN RANGE
   ======================================================== */
 
-  const approvedThisMonth = useMemo(() => {
+  const approvedInRange = useMemo(() => {
     return collections.filter(
       (collection) =>
         normalizeStatus(collection?.status) === "approved" &&
-        isSameMonth(collectionDateOf(collection), now)
+        isInRange(collectionDateOf(collection), range)
     );
-  }, [collections, now]);
+  }, [collections, range]);
 
-  const monthCollected = useMemo(
+  const periodCollected = useMemo(
     () =>
-      approvedThisMonth.reduce(
-        (sum, collection) => sum + Number(collection?.amount || 0),
-        0
-      ),
-    [approvedThisMonth]
+      approvedInRange.reduce((sum, collection) => sum + Number(collection?.amount || 0), 0),
+    [approvedInRange]
   );
 
   /* =======================================================
-     SCHEDULED DUE THIS MONTH (from every loan's repayment
+     SCHEDULED DUE IN RANGE (from every loan's repayment
      schedule rows, regardless of loan status)
   ======================================================== */
 
-  const scheduleRowsThisMonth = useMemo(() => {
+  const scheduleRowsInRange = useMemo(() => {
     const rows = [];
 
     loans.forEach((loan) => {
@@ -99,63 +216,62 @@ const useDashboardMetrics = ({
         : [];
 
       schedule.forEach((row) => {
-        if (isSameMonth(row?.dueDate, now)) {
+        if (isInRange(row?.dueDate, range)) {
           rows.push(row);
         }
       });
     });
 
     return rows;
-  }, [loans, now]);
+  }, [loans, range]);
 
-  const monthDue = useMemo(
+  const periodDue = useMemo(
     () =>
-      scheduleRowsThisMonth.reduce(
+      scheduleRowsInRange.reduce(
         (sum, row) =>
           sum + Number(row?.paymentAmount || row?.emiAmount || row?.amount || 0),
         0
       ),
-    [scheduleRowsThisMonth]
+    [scheduleRowsInRange]
   );
 
-  const collectionRate = monthDue > 0 ? Math.min(100, (monthCollected / monthDue) * 100) : 0;
+  const collectionRate = periodDue > 0 ? Math.min(100, (periodCollected / periodDue) * 100) : 0;
 
   /* =======================================================
-     WEEKLY TREND (collected vs due, week-of-month)
+     TREND (collected vs due, bucketed to fit the range)
   ======================================================== */
 
   const weeklyTrend = useMemo(() => {
-    const weeks = [1, 2, 3, 4].map((week) => ({
-      week: `Week ${week}`,
-      collected: 0,
-      due: 0,
-      overdue: 0,
-    }));
+    const keys = buildBucketKeys(range);
 
-    approvedThisMonth.forEach((collection) => {
-      const week = weekOfMonth(collectionDateOf(collection));
+    const buckets = new Map(
+      keys.map((key) => [key, { week: bucketLabelFor(key, range), collected: 0, due: 0, overdue: 0 }])
+    );
 
-      if (week) {
-        weeks[week - 1].collected += Number(collection?.amount || 0);
-      }
+    approvedInRange.forEach((collection) => {
+      const key = bucketKeyFor(collectionDateOf(collection), range);
+      const bucket = buckets.get(key);
+
+      if (bucket) bucket.collected += Number(collection?.amount || 0);
     });
 
-    scheduleRowsThisMonth.forEach((row) => {
-      const week = weekOfMonth(row?.dueDate);
+    scheduleRowsInRange.forEach((row) => {
+      const key = bucketKeyFor(row?.dueDate, range);
+      const bucket = buckets.get(key);
 
-      if (!week) return;
+      if (!bucket) return;
 
       const amount = Number(row?.paymentAmount || row?.emiAmount || row?.amount || 0);
 
-      weeks[week - 1].due += amount;
+      bucket.due += amount;
 
       if (normalizeStatus(row?.status) === "overdue") {
-        weeks[week - 1].overdue += amount;
+        bucket.overdue += amount;
       }
     });
 
-    return weeks;
-  }, [approvedThisMonth, scheduleRowsThisMonth]);
+    return Array.from(buckets.values());
+  }, [range, approvedInRange, scheduleRowsInRange]);
 
   /* =======================================================
      PORTFOLIO COMPOSITION
@@ -220,7 +336,7 @@ const useDashboardMetrics = ({
   }, [loans]);
 
   /* =======================================================
-     NEW LOANS vs RE-LOANS THIS MONTH
+     NEW LOANS vs RE-LOANS IN RANGE
      A loan is a re-loan when it isn't the earliest loan on
      record for its customer.
   ======================================================== */
@@ -247,7 +363,7 @@ const useDashboardMetrics = ({
       );
 
       sorted.forEach((loan, index) => {
-        if (!isSameMonth(loan?.createdAt, now)) return;
+        if (!isInRange(loan?.createdAt, range)) return;
 
         if (index === 0) {
           newLoans += 1;
@@ -258,7 +374,7 @@ const useDashboardMetrics = ({
     });
 
     return { newLoans, reLoans };
-  }, [loans, now]);
+  }, [loans, range]);
 
   /* =======================================================
      CUSTOMER BASE
@@ -266,7 +382,7 @@ const useDashboardMetrics = ({
 
   const customerBase = useMemo(() => {
     const newCustomers = customers.filter((record) =>
-      isSameMonth(record?.customer?.createdAt, now)
+      isInRange(record?.customer?.createdAt, range)
     ).length;
 
     const activeCustomerIds = new Set(
@@ -287,10 +403,10 @@ const useDashboardMetrics = ({
           ? Math.round((activeCustomerIds.size / totalCustomers) * 1000) / 10
           : 0,
     };
-  }, [customers, loans, totalCustomers, now]);
+  }, [customers, loans, totalCustomers, range]);
 
   /* =======================================================
-     DAILY EXPENSE TREND (this month)
+     EXPENSE TREND IN RANGE
   ======================================================== */
 
   const dailyExpenseTrend = useMemo(() => {
@@ -299,7 +415,7 @@ const useDashboardMetrics = ({
     expenses.forEach((expense) => {
       if (normalizeStatus(expense?.status) === "rejected") return;
 
-      if (!isSameMonth(expense?.date, now)) return;
+      if (!isInRange(expense?.date, range)) return;
 
       const key = dayKey(expense?.date);
 
@@ -314,7 +430,7 @@ const useDashboardMetrics = ({
         day: date.slice(8, 10),
         amount,
       }));
-  }, [expenses, now]);
+  }, [expenses, range]);
 
   const monthExpenseTotal = useMemo(
     () => dailyExpenseTrend.reduce((sum, row) => sum + row.amount, 0),
@@ -378,8 +494,9 @@ const useDashboardMetrics = ({
   }, [loans, now]);
 
   return {
-    monthCollected,
-    monthDue,
+    periodLabel,
+    monthCollected: periodCollected,
+    monthDue: periodDue,
     collectionRate,
     weeklyTrend,
     portfolioComposition,

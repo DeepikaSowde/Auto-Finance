@@ -95,6 +95,93 @@ export const logout = async (token) => {
   await query("DELETE FROM sessions WHERE token = $1", [token]);
 };
 
+/* =========================================================
+   USER MANAGEMENT (admin-only)
+========================================================= */
+
+const pad = (number, length = 3) => String(number).padStart(length, "0");
+
+export const getUsers = async () => {
+  const result = await query("SELECT * FROM users ORDER BY created_at ASC");
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    username: row.username,
+    name: row.name,
+    role: row.role,
+    createdAt: row.created_at,
+  }));
+};
+
+export const createUser = async ({ username, password, name, role } = {}) => {
+  const cleanUsername = String(username || "").trim().toLowerCase();
+  const cleanName = String(name || "").trim();
+  const cleanRole = role === "staff" ? "staff" : "admin";
+
+  if (!cleanUsername || !password || !cleanName) {
+    const error = new Error("Username, password and name are required.");
+
+    error.statusCode = 400;
+
+    throw error;
+  }
+
+  const existing = await query("SELECT pk FROM users WHERE username = $1", [cleanUsername]);
+
+  if (existing.rows.length > 0) {
+    const error = new Error("That username is already taken.");
+
+    error.statusCode = 409;
+
+    throw error;
+  }
+
+  const { salt, hash } = createPasswordRecord(String(password));
+
+  const countResult = await query("SELECT COUNT(*)::int AS count FROM users");
+  const id = `${cleanRole.toUpperCase()}-${pad(countResult.rows[0].count + 1)}`;
+
+  await query(
+    `INSERT INTO users (id, username, password_hash, password_salt, name, role)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [id, cleanUsername, hash, salt, cleanName, cleanRole]
+  );
+
+  return { id, username: cleanUsername, name: cleanName, role: cleanRole };
+};
+
+export const deleteUser = async (userId, requestingUserId) => {
+  if (userId === requestingUserId) {
+    const error = new Error("You can't remove your own account while signed in.");
+
+    error.statusCode = 400;
+
+    throw error;
+  }
+
+  const target = await query("SELECT * FROM users WHERE id = $1", [userId]);
+
+  if (!target.rows[0]) {
+    return false;
+  }
+
+  if (target.rows[0].role === "admin") {
+    const adminCount = await query("SELECT COUNT(*)::int AS count FROM users WHERE role = 'admin'");
+
+    if (adminCount.rows[0].count <= 1) {
+      const error = new Error("At least one admin account must remain.");
+
+      error.statusCode = 400;
+
+      throw error;
+    }
+  }
+
+  const result = await query("DELETE FROM users WHERE id = $1", [userId]);
+
+  return result.rowCount > 0;
+};
+
 export const getUserForToken = async (token) => {
   if (!token) {
     return null;
