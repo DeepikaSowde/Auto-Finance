@@ -1,8 +1,10 @@
 // src/services/sanitize.js
 //
-// Strips uploaded file contents (Base64) before anything reaches the
-// database. Only file metadata (name/type/size/uploadedAt) is persisted,
-// mirroring the previous localStorage-based prototype's behavior.
+// Strips uploaded document file contents (Base64) before anything reaches
+// the database. Only file metadata (name/type/size/uploadedAt) is
+// persisted for documents. The customer and vehicle profile photos are
+// the exception — a single small compressed image each, kept in full for
+// the Customer Details photo viewer.
 
 const stripUpload = (upload = {}) => ({
   type: upload.type || "",
@@ -28,10 +30,6 @@ const stripInsuranceDocument = (document = {}) => ({
 
 export const sanitizeCustomerPayload = (payload = {}) => {
   const safe = structuredClone(payload || {});
-
-  if (safe.customer?.photo) {
-    safe.customer.photo = stripPhoto(safe.customer.photo);
-  }
 
   if (Array.isArray(safe.customer?.documents?.uploads)) {
     safe.customer.documents.uploads = safe.customer.documents.uploads.map(stripUpload);

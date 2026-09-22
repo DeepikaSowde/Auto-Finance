@@ -45,28 +45,39 @@ export const CUSTOMER_SCHEMA = {
 
     photo: {
       fileName: "",
+      fileType: "",
+      fileSize: 0,
       fileData: "",
+      uploadedAt: "",
     },
   },
 
   /**
    * Vehicle information
    */
-vehicle: {
-  id: "",
-  vehicleId: "",
+  vehicle: {
+    id: "",
+    vehicleId: "",
 
-  vehicleType: "",
-  brand: "",
-  model: "",
-  variant: "",
-  colour: "",
+    vehicleType: "",
+    brand: "",
+    model: "",
+    variant: "",
+    colour: "",
 
-  manufacturingYear: "",
-  fuelType: "",
+    manufacturingYear: "",
+    fuelType: "",
 
-  vehicleValue: 0,
-},
+    vehicleValue: 0,
+
+    photo: {
+      fileName: "",
+      fileType: "",
+      fileSize: 0,
+      fileData: "",
+      uploadedAt: "",
+    },
+  },
 
   /**
    * RC / Registration / Insurance information

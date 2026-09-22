@@ -405,6 +405,27 @@ const handleNext = useCallback(() => {
 
   /*
    * --------------------------------------------------------
+   * CUSTOMER PHOTO
+   * --------------------------------------------------------
+   */
+
+  const updateCustomerPhoto = useCallback((photo) => {
+    setFormData((previous) => ({
+      ...previous,
+
+      customer: {
+        ...previous.customer,
+
+        photo: {
+          ...(previous.customer?.photo || {}),
+          ...(photo || {}),
+        },
+      },
+    }));
+  }, []);
+
+  /*
+   * --------------------------------------------------------
    * KYC
    * --------------------------------------------------------
    */
@@ -694,8 +715,14 @@ const updateVehicleData = useCallback(
             data={
               formData.customer.personal
             }
+            photo={
+              formData.customer.photo
+            }
             onChange={
               updateCustomerPersonal
+            }
+            onPhotoChange={
+              updateCustomerPhoto
             }
           />
         );

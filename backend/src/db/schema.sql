@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
   manufacturing_year  TEXT,
   fuel_type           TEXT,
   vehicle_value       NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  photo               JSONB NOT NULL DEFAULT '{}'::jsonb,
   status              TEXT NOT NULL DEFAULT 'ACTIVE'
                       CHECK (status IN ('ACTIVE', 'SEIZED', 'PENDING_SALE', 'RELEASED', 'SOLD')),
   seizure             JSONB,

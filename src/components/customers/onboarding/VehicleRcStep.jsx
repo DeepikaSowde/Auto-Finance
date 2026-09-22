@@ -9,6 +9,7 @@ import {
   Upload,
   X,
   Check,
+  Camera,
 } from "lucide-react";
 
 const VehicleRcStep = ({
@@ -48,6 +49,34 @@ const VehicleRcStep = ({
         [field]: value,
       },
     });
+  };
+
+  const vehiclePhoto = vehicle.photo || {};
+
+  const handleVehiclePhotoUpload = (event) => {
+    const file = event.target.files?.[0];
+
+    event.target.value = "";
+
+    if (!file || !file.type.startsWith("image/")) return;
+
+    fileToDataUrl(file)
+      .then((fileData) => {
+        updateVehicle("photo", {
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size,
+          fileData,
+          uploadedAt: new Date().toISOString(),
+        });
+      })
+      .catch((error) => {
+        console.error("Vehicle photo upload failed:", error);
+      });
+  };
+
+  const removeVehiclePhoto = () => {
+    updateVehicle("photo", { fileName: "", fileType: "", fileSize: 0, fileData: "", uploadedAt: "" });
   };
 
   const updateRc = (
@@ -431,6 +460,77 @@ const VehicleRcStep = ({
                   }
                 />
               </FormField>
+
+              {/* VEHICLE PHOTO */}
+              <div className="sm:col-span-2 lg:col-span-4">
+                <FormField label="Vehicle / Bike Photo">
+                  {vehiclePhoto.fileData ? (
+                    <div className="rounded-lg border border-[#D8E9DF] bg-[#F6FBF8] p-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <div className="h-20 w-28 shrink-0 overflow-hidden rounded-lg border border-[#CDE1D5] bg-white">
+                          <img
+                            src={vehiclePhoto.fileData}
+                            alt="Vehicle"
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <Camera size={14} className="shrink-0 text-[#0B5D3B]" />
+
+                            <p
+                              className="truncate text-xs font-semibold text-[#0B5D3B]"
+                              title={vehiclePhoto.fileName}
+                            >
+                              {vehiclePhoto.fileName || "Vehicle Photo"}
+                            </p>
+                          </div>
+
+                          {vehiclePhoto.fileSize > 0 && (
+                            <p className="mt-1 text-[10px] text-slate-400">
+                              {formatFileSize(vehiclePhoto.fileSize)}
+                            </p>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={removeVehiclePhoto}
+                          className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500"
+                        >
+                          <X size={13} />
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <label className="flex min-h-[76px] cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white px-4 py-3 transition hover:border-[#0B5D3B] hover:bg-[#F6FBF8]">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#EAF5EF]">
+                          <Camera size={18} className="text-[#0B5D3B]" />
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <Upload size={13} className="text-[#0B5D3B]" />
+                            <span className="text-xs font-semibold text-[#0B5D3B]">Upload Vehicle Photo</span>
+                          </div>
+
+                          <p className="mt-0.5 text-[10px] text-slate-400">JPG, JPEG, PNG or WEBP</p>
+                        </div>
+                      </div>
+
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/jpg,image/png,image/webp"
+                        onChange={handleVehiclePhotoUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+                </FormField>
+              </div>
             </div>
           </CompactSection>
         )}
@@ -1087,5 +1187,14 @@ const fileToDataUrl = (
       reader.readAsDataURL(file);
     }
   );
+
+const formatFileSize = (bytes) => {
+  const size = Number(bytes) || 0;
+
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 export default VehicleRcStep;

@@ -38,6 +38,7 @@ import {
 import LoanRepaymentSchedule from "../../components/loans/LoanRepaymentSchedule";
 import CustomerPaymentHistoryModal from "../../components/customers/CustomerPaymentHistoryModal";
 import CustomerActivityHistoryModal from "../../components/customers/CustomerActivityHistoryModal";
+import CustomerPhotoViewer from "../../components/customers/CustomerPhotoViewer";
 
 
 import {
@@ -193,6 +194,10 @@ const [showActivityHistory, setShowActivityHistory] =
   const vehicle =
     customer?.vehicle ||
     {};
+
+  const customerPhoto =
+    customer?.customer?.photo?.fileData ||
+    "";
 
   const rc =
     customer?.rc ||
@@ -752,6 +757,13 @@ const handleActivity = () => {
                 </CardLink>
               }
             >
+              {customerPhoto && (
+                <CustomerPhotoViewer
+                  photo={customerPhoto}
+                  name={personal?.name || "Customer"}
+                />
+              )}
+
               <div
                 className="
                   grid
@@ -1528,19 +1540,15 @@ const VehicleTab = ({
               shadow-sm
             "
           >
-            <img
-              src="/assets/vehicle-placeholder.jpg"
-              alt="Vehicle"
-              className="
-                vehicle-image-placeholder
-                h-[120px]
-                w-full
-                object-cover
-              "
-              onError={(event) => {
-                event.currentTarget.src =
-                  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='260' viewBox='0 0 400 260'%3E%3Crect width='400' height='260' fill='%23eef6f1'/%3E%3Ctext x='200' y='135' text-anchor='middle' font-family='Arial' font-size='22' fill='%23718278'%3EVehicle%3C/text%3E%3C/svg%3E";
-              }}
+            <CustomerPhotoViewer
+              photo={
+                vehicle?.photo?.fileData ||
+                "/assets/vehicle-placeholder.jpg"
+              }
+              name={
+                vehicle?.photo?.fileName ||
+                "Vehicle"
+              }
             />
 
             <div className="border-t border-slate-100 px-3 py-2">

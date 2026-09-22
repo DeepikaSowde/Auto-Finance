@@ -21,8 +21,11 @@ export const VEHICLE_STATUS = {
 /* =========================================================
    SANITIZATION
 
-   Uploaded file contents are never sent to the server — only
-   metadata (name/type/size), matching what this app always did.
+   Uploaded document files are never sent to the server — only
+   metadata (name/type/size). The customer and vehicle profile
+   photos are the exception: they're a single small compressed
+   image each, needed for the Customer Details photo viewer, so
+   their fileData is kept.
 ========================================================= */
 
 const stripUploads = (uploads = []) =>
@@ -37,10 +40,6 @@ const stripUploads = (uploads = []) =>
 
 const sanitizeCustomerForRequest = (record) => {
   const safe = structuredClone(record);
-
-  if (safe.customer?.photo) {
-    safe.customer.photo = { fileName: "", fileData: "" };
-  }
 
   if (safe.customer?.documents?.uploads) {
     safe.customer.documents.uploads = stripUploads(safe.customer.documents.uploads);
@@ -93,6 +92,108 @@ export const getCustomerById = async (customerId) => {
 
     return null;
   }
+};
+
+/* =========================================================
+   CUSTOMER SEARCH
+========================================================= */
+
+const normalizeSearchValue = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+
+const maskAadhaar = (aadhaarNumber) => {
+  const digits = String(aadhaarNumber || "").replace(/\D/g, "");
+
+  if (digits.length < 4) return "XXXX XXXX XXXX";
+
+  return `XXXX XXXX ${digits.slice(-4)}`;
+};
+
+const getCustomerLoansForSearch = (record) => {
+  const loans = Array.isArray(record?.loans) ? record.loans : [];
+
+  return [...(record?.loan ? [record.loan] : []), ...loans].filter(Boolean);
+};
+
+/**
+ * Search existing customers by full/last-4 Aadhaar, name, customer
+ * number/ID, or loan number/ID. Read only — never mutates data.
+ */
+export const searchCustomers = async (query) => {
+  const searchValue = String(query || "").trim();
+
+  if (!searchValue) return [];
+
+  const normalizedQuery = normalizeSearchValue(searchValue);
+
+  const customers = await getCustomers();
+
+  return customers
+    .map((record) => {
+      const customer = record?.customer || {};
+      const customerId = customer?.id || "";
+      const customerNumber = customer?.customerNumber || "";
+      const customerName = customer?.personal?.name || "";
+      const aadhaarNumber = customer?.kyc?.aadhaarNumber || "";
+      const normalizedAadhaar = normalizeSearchValue(aadhaarNumber);
+
+      const matchesFullAadhaar =
+        normalizedQuery.length === 12 && normalizedAadhaar === normalizedQuery;
+
+      const matchesAadhaarLastFour =
+        normalizedQuery.length === 4 &&
+        /^\d{4}$/.test(normalizedQuery) &&
+        normalizedAadhaar.endsWith(normalizedQuery);
+
+      const matchesCustomerId = normalizeSearchValue(customerId).includes(normalizedQuery);
+      const matchesCustomerNumber = normalizeSearchValue(customerNumber).includes(normalizedQuery);
+      const matchesCustomerName = normalizeSearchValue(customerName).includes(normalizedQuery);
+
+      const loans = getCustomerLoansForSearch(record);
+
+      const matchingLoans = loans.filter((loan) => {
+        const loanId = loan?.id || "";
+        const loanNumber = loan?.loanNumber || "";
+
+        return (
+          normalizeSearchValue(loanId).includes(normalizedQuery) ||
+          normalizeSearchValue(loanNumber).includes(normalizedQuery)
+        );
+      });
+
+      const isMatch =
+        matchesFullAadhaar ||
+        matchesAadhaarLastFour ||
+        matchesCustomerId ||
+        matchesCustomerNumber ||
+        matchesCustomerName ||
+        matchingLoans.length > 0;
+
+      if (!isMatch) return null;
+
+      // Never return the full Aadhaar — only the masked version.
+      return {
+        customerId,
+        customerNumber,
+        customerName,
+        maskedAadhaar: maskAadhaar(aadhaarNumber),
+        record,
+        loans,
+        matchingLoans,
+        matchedBy: {
+          customerId: matchesCustomerId,
+          customerNumber: matchesCustomerNumber,
+          customerName: matchesCustomerName,
+          aadhaarFull: matchesFullAadhaar,
+          aadhaarLastFour: matchesAadhaarLastFour,
+          loan: matchingLoans.length > 0,
+        },
+      };
+    })
+    .filter(Boolean);
 };
 
 export const saveCustomer = async (record) => {
