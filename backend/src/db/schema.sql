@@ -423,3 +423,31 @@ CREATE TABLE IF NOT EXISTS categories (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (type, name)
 );
+
+/* =========================================================
+   REFERRAL COMMISSIONS
+
+   Payouts owed to agents / dealers who referred a loan. Marking one
+   paid also books a matching row in expenses (expense_id).
+========================================================= */
+
+CREATE TABLE IF NOT EXISTS referral_commissions (
+  pk               INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id               TEXT UNIQUE NOT NULL,
+  agent_name       TEXT NOT NULL,
+  agent_type       TEXT NOT NULL DEFAULT 'Agent',
+  customer_name    TEXT,
+  loan_number      TEXT,
+  amount           NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  status           TEXT NOT NULL DEFAULT 'Pending',
+  commission_date  TEXT,
+  paid_date        TEXT,
+  payment_mode     TEXT,
+  remarks          TEXT,
+  expense_id       TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_referral_commissions_status ON referral_commissions (status);
+CREATE INDEX IF NOT EXISTS idx_referral_commissions_date ON referral_commissions (commission_date);

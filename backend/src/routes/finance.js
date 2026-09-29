@@ -28,6 +28,12 @@ import {
   updateIncome,
 } from "../services/incomeRepository.js";
 import {
+  addReferral,
+  deleteReferral,
+  getReferrals,
+  markReferralPaid,
+} from "../services/referralRepository.js";
+import {
   addCategory,
   deleteCategory,
   getCategories,
@@ -295,5 +301,50 @@ reloanRouter.post(
   "/eligibility",
   asyncHandler(async (req, res) => {
     res.status(201).json(await saveEligibilityCheck(req.body || {}));
+  })
+);
+
+/* =========================================================
+   REFERRAL COMMISSIONS
+========================================================= */
+
+export const referralsRouter = Router();
+
+referralsRouter.get(
+  "/",
+  asyncHandler(async (req, res) => {
+    res.json(await getReferrals());
+  })
+);
+
+referralsRouter.post(
+  "/",
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await addReferral(req.body || {}));
+  })
+);
+
+referralsRouter.post(
+  "/:referralId/pay",
+  asyncHandler(async (req, res) => {
+    const referral = await markReferralPaid(req.params.referralId, req.body || {});
+
+    if (!referral) {
+      return res.status(404).json({ error: "Referral commission not found." });
+    }
+
+    res.json(referral);
+  })
+);
+
+referralsRouter.delete(
+  "/:referralId",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    if (!(await deleteReferral(req.params.referralId))) {
+      return res.status(404).json({ error: "Referral commission not found." });
+    }
+
+    res.status(204).send();
   })
 );

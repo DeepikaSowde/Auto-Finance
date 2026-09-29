@@ -22,7 +22,7 @@ import CustomerDetails from "./pages/customers/CustomerDetails";
 import Dashboard from "./pages/dashboard/Dashboard";
 import RecentActivities from "./pages/activities/RecentActivities";
 import Settings from "./pages/settings/Settings";
-import ExpenseControl from "./pages/expense/ExpenseControl";
+import ExpenseControl from "./pages/expense/ExpensePage";
 import Investor from "./pages/investor/Investor";
 import Ledger from "./pages/ledger/Ledger";
 
