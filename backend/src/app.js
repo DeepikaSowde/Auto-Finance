@@ -16,6 +16,7 @@ import {
   investorsRouter,
   referralsRouter,
   reloanRouter,
+  remindersRouter,
 } from "./routes/finance.js";
 
 export const createApp = () => {
@@ -39,6 +40,7 @@ export const createApp = () => {
   app.use("/api/expenses", requireAuth, expensesRouter);
   app.use("/api/incomes", requireAuth, incomesRouter);
   app.use("/api/referrals", requireAuth, referralsRouter);
+  app.use("/api/reminders", requireAuth, remindersRouter);
   app.use("/api/categories", requireAuth, categoriesRouter);
   app.use("/api/reloan", requireAuth, reloanRouter);
 

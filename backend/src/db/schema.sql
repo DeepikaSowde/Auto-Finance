@@ -451,3 +451,27 @@ CREATE TABLE IF NOT EXISTS referral_commissions (
 
 CREATE INDEX IF NOT EXISTS idx_referral_commissions_status ON referral_commissions (status);
 CREATE INDEX IF NOT EXISTS idx_referral_commissions_date ON referral_commissions (commission_date);
+
+/* =========================================================
+   REMINDERS
+
+   Payment reminders sent to customers from the Reminders page.
+   Everything the page tracks beyond these columns (amounts, follow-up
+   settings, send count...) lives in details.
+========================================================= */
+
+CREATE TABLE IF NOT EXISTS reminders (
+  pk                  INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id                  TEXT UNIQUE NOT NULL,
+  loan_id             TEXT,
+  loan_number         TEXT,
+  customer_id         TEXT,
+  status              TEXT NOT NULL DEFAULT 'Active',
+  next_reminder_date  TEXT,
+  details             JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders (status);
+CREATE INDEX IF NOT EXISTS idx_reminders_loan ON reminders (loan_id);

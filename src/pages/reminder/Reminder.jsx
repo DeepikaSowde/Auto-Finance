@@ -31,15 +31,16 @@ import {
   getLoans,
 } from "../../services/customerStorage";
 
+import {
+  REMINDER_EVENT,
+  getReminders,
+  addReminder,
+  updateReminder,
+} from "../../services/reminderStorage";
+
 /* =========================================================
    CONSTANTS
 ========================================================= */
-
-const REMINDER_STORAGE_KEY =
-  "auto_finance_reminders";
-
-const REMINDER_EVENT =
-  "auto-finance:reminders-updated";
 
 const FOLLOW_UP_OPTIONS = [
   {
@@ -110,13 +111,6 @@ const roundMoney = (
       Number.EPSILON
     ) * 100
   ) / 100;
-
-const createId = () => {
-  return `REM-${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2, 8)
-    .toUpperCase()}`;
-};
 
 const getTodayKey = () => {
   const today =
@@ -280,57 +274,6 @@ const safeGetLoans = async () => {
     );
 
     return [];
-  }
-};
-
-const getStoredReminders = () => {
-  try {
-    const raw =
-      localStorage.getItem(
-        REMINDER_STORAGE_KEY
-      );
-
-    if (!raw) {
-      return [];
-    }
-
-    const parsed =
-      JSON.parse(raw);
-
-    return Array.isArray(
-      parsed
-    )
-      ? parsed
-      : [];
-  } catch (error) {
-    console.error(
-      "Failed to load reminders:",
-      error
-    );
-
-    return [];
-  }
-};
-
-const saveStoredReminders = (
-  reminders
-) => {
-  localStorage.setItem(
-    REMINDER_STORAGE_KEY,
-    JSON.stringify(
-      reminders
-    )
-  );
-
-  if (
-    typeof window !==
-    "undefined"
-  ) {
-    window.dispatchEvent(
-      new CustomEvent(
-        REMINDER_EVENT
-      )
-    );
   }
 };
 
@@ -706,10 +649,7 @@ const Reminder = () => {
   const [
     reminders,
     setReminders,
-  ] = useState(
-    () =>
-      getStoredReminders()
-  );
+  ] = useState([]);
 
   const [
     search,
@@ -758,12 +698,20 @@ const Reminder = () => {
 
   useEffect(() => {
     const reload = async () => {
+      const [
+        nextLoans,
+        nextReminders,
+      ] = await Promise.all([
+        safeGetLoans(),
+        getReminders(),
+      ]);
+
       setLoans(
-        await safeGetLoans()
+        nextLoans
       );
 
       setReminders(
-        getStoredReminders()
+        nextReminders
       );
     };
 
@@ -1109,7 +1057,7 @@ const Reminder = () => {
      CREATE REMINDER
   ====================================================== */
 
-  const handleCreateReminder = ({
+  const handleCreateReminder = async ({
     loan,
     followUp,
     note,
@@ -1139,10 +1087,8 @@ const Reminder = () => {
       ) ||
       FOLLOW_UP_OPTIONS[0];
 
+    // The server assigns the id.
     const reminder = {
-      id:
-        createId(),
-
       customerId:
         getCustomerId(
           loan
@@ -1253,22 +1199,31 @@ const Reminder = () => {
         "Demo Notification",
     };
 
-    const next =
-      [
-        reminder,
-        ...reminders,
-      ];
+    let saved;
 
-    saveStoredReminders(
-      next
-    );
+    try {
+      saved =
+        await addReminder(
+          reminder
+        );
+    } catch (error) {
+      setToast(
+        error.message ||
+          "Couldn't save this reminder."
+      );
+
+      return;
+    }
 
     setReminders(
-      next
+      (current) => [
+        saved,
+        ...current,
+      ]
     );
 
     setSelectedReminder(
-      reminder
+      saved
     );
 
     setShowSendModal(
@@ -1286,71 +1241,100 @@ const Reminder = () => {
      SEND EXISTING REMINDER NOW
   ====================================================== */
 
+  /*
+   * Applies `buildUpdates(item)` to one reminder, saves it and swaps the
+   * server's copy into state.
+   */
+  const saveReminderChange = async (
+    reminderId,
+    buildUpdates,
+    successMessage
+  ) => {
+    const item =
+      reminders.find(
+        (reminder) =>
+          reminder.id ===
+          reminderId
+      );
+
+    if (!item) {
+      return;
+    }
+
+    try {
+      const saved =
+        await updateReminder(
+          reminderId,
+          buildUpdates(item)
+        );
+
+      setReminders(
+        (current) =>
+          current.map(
+            (reminder) =>
+              reminder.id ===
+              reminderId
+                ? saved
+                : reminder
+          )
+      );
+
+      setToast(
+        successMessage
+      );
+    } catch (error) {
+      setToast(
+        error.message ||
+          "Couldn't update this reminder."
+      );
+    }
+  };
+
   const handleSendNow = (
     reminderId
   ) => {
     const now =
       new Date();
 
-    const next =
-      reminders.map(
-        (item) => {
-          if (
-            item.id !==
-            reminderId
-          ) {
-            return item;
-          }
+    return saveReminderChange(
+      reminderId,
+      (item) => {
+        const nextDate =
+          item.followUpDays
+            ? addDays(
+                getDateKey(
+                  now
+                ),
+                item.followUpDays
+              )
+            : "";
 
-          const nextDate =
-            item.followUpDays
-              ? addDays(
-                  getDateKey(
-                    now
-                  ),
-                  item.followUpDays
-                )
-              : "";
+        return {
+          lastSentAt:
+            now.toISOString(),
 
-          return {
-            ...item,
+          sendCount:
+            Number(
+              item.sendCount ||
+                0
+            ) + 1,
 
-            lastSentAt:
-              now.toISOString(),
+          nextReminderDate:
+            nextDate,
 
-            sendCount:
-              Number(
-                item.sendCount ||
-                  0
-              ) + 1,
-
-            nextReminderDate:
-              nextDate,
-
-            /*
-             * Sending now must keep the
-             * reminder Active if follow-up
-             * is configured.
-             */
-            status:
-              item.status ===
-                "Stopped"
-                ? "Active"
-                : item.status ||
-                  "Active",
-          };
-        }
-      );
-
-    saveStoredReminders(
-      next
-    );
-
-    setReminders(
-      next
-    );
-
-    setToast(
+          /*
+           * Sending now must keep the
+           * reminder Active if follow-up
+           * is configured.
+           */
+          status:
+            item.status ===
+              "Stopped"
+              ? "Active"
+              : item.status ||
+                "Active",
+        };
+      },
       "Reminder sent successfully."
     );
   };
@@ -1361,44 +1345,21 @@ const Reminder = () => {
 
   const handleStopReminder = (
     reminderId
-  ) => {
-    const next =
-      reminders.map(
-        (item) => {
-          if (
-            item.id !==
-            reminderId
-          ) {
-            return item;
-          }
+  ) =>
+    saveReminderChange(
+      reminderId,
+      () => ({
+        status:
+          "Stopped",
 
-          return {
-            ...item,
+        stoppedAt:
+          new Date().toISOString(),
 
-            status:
-              "Stopped",
-
-            stoppedAt:
-              new Date().toISOString(),
-
-            nextReminderDate:
-              "",
-          };
-        }
-      );
-
-    saveStoredReminders(
-      next
-    );
-
-    setReminders(
-      next
-    );
-
-    setToast(
+        nextReminderDate:
+          "",
+      }),
       "Reminder follow-up stopped."
     );
-  };
 
   /* =======================================================
      RESUME REMINDER
@@ -1406,46 +1367,23 @@ const Reminder = () => {
 
   const handleResumeReminder = (
     reminderId
-  ) => {
-    const next =
-      reminders.map(
-        (item) => {
-          if (
-            item.id !==
-            reminderId
-          ) {
-            return item;
-          }
+  ) =>
+    saveReminderChange(
+      reminderId,
+      (item) => ({
+        status:
+          "Active",
 
-          return {
-            ...item,
-
-            status:
-              "Active",
-
-            nextReminderDate:
-              item.followUpDays
-                ? addDays(
-                    getTodayKey(),
-                    item.followUpDays
-                  )
-                : "",
-          };
-        }
-      );
-
-    saveStoredReminders(
-      next
-    );
-
-    setReminders(
-      next
-    );
-
-    setToast(
+        nextReminderDate:
+          item.followUpDays
+            ? addDays(
+                getTodayKey(),
+                item.followUpDays
+              )
+            : "",
+      }),
       "Reminder follow-up resumed."
     );
-  };
 
   /* =======================================================
      VIEW REMINDER

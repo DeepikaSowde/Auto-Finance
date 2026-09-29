@@ -34,6 +34,11 @@ import {
   markReferralPaid,
 } from "../services/referralRepository.js";
 import {
+  addReminder,
+  getReminders,
+  updateReminder,
+} from "../services/reminderRepository.js";
+import {
   addCategory,
   deleteCategory,
   getCategories,
@@ -346,5 +351,38 @@ referralsRouter.delete(
     }
 
     res.status(204).send();
+  })
+);
+
+/* =========================================================
+   REMINDERS
+========================================================= */
+
+export const remindersRouter = Router();
+
+remindersRouter.get(
+  "/",
+  asyncHandler(async (req, res) => {
+    res.json(await getReminders());
+  })
+);
+
+remindersRouter.post(
+  "/",
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await addReminder(req.body || {}));
+  })
+);
+
+remindersRouter.put(
+  "/:reminderId",
+  asyncHandler(async (req, res) => {
+    const reminder = await updateReminder(req.params.reminderId, req.body || {});
+
+    if (!reminder) {
+      return res.status(404).json({ error: "Reminder not found." });
+    }
+
+    res.json(reminder);
   })
 );
