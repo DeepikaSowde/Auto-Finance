@@ -24,6 +24,11 @@ import {
   login,
 } from "../../services/authStorage";
 
+import {
+  canOpenPath,
+  getLandingPath,
+} from "../../config/permissions";
+
 const Login = () => {
   const navigate =
     useNavigate();
@@ -80,23 +85,23 @@ const Login = () => {
     const requestedPath =
       location.state?.from;
 
-    if (
-      result.user.role ===
-      "staff"
-    ) {
-      navigate(
-        "/staff/collection",
-        {
-          replace: true,
-        }
-      );
-
-      return;
-    }
+    /*
+     * Back to the page they were sent from when they may open it,
+     * otherwise the first screen their permissions allow.
+     */
+    const target =
+      requestedPath &&
+      canOpenPath(
+        requestedPath,
+        result.user
+      )
+        ? requestedPath
+        : getLandingPath(
+            result.user
+          ) || "/dashboard";
 
     navigate(
-      requestedPath ||
-        "/dashboard",
+      target,
       {
         replace: true,
       }

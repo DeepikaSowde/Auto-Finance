@@ -9,9 +9,29 @@ import {
   getSession,
 } from "../../services/authStorage";
 
+import {
+  can,
+  getLandingPath,
+} from "../../config/permissions";
+
+import NoAccess from "./NoAccess";
+
+/*
+ * adminOnly  – Settings, User Management.
+ * module     – permission module that opens this screen.
+ * action     – defaults to "view".
+ * anyOf      – [[module, action], ...] when several permissions may open it
+ *              (New Loan opens for loans.add or, for a re-loan, reloan.add).
+ *
+ * A user who can't open the screen is sent to the first screen they can
+ * open, or shown a "no access" notice when they have none at all.
+ */
 const ProtectedRoute = ({
   children,
-  role,
+  adminOnly = false,
+  module,
+  action = "view",
+  anyOf,
 }) => {
   const session =
     getSession();
@@ -32,25 +52,28 @@ const ProtectedRoute = ({
     );
   }
 
-  if (
-    role &&
-    session.role !== role
-  ) {
+  const allowed = adminOnly
+    ? session.role === "admin"
+    : anyOf
+      ? anyOf.some(([anyModule, anyAction = "view"]) =>
+          can(anyModule, anyAction, session)
+        )
+      : !module || can(module, action, session);
+
+  if (!allowed) {
+    const landing =
+      getLandingPath(session);
+
     if (
-      session.role ===
-      "staff"
+      !landing ||
+      landing === location.pathname
     ) {
-      return (
-        <Navigate
-          to="/staff/collection"
-          replace
-        />
-      );
+      return <NoAccess />;
     }
 
     return (
       <Navigate
-        to="/dashboard"
+        to={landing}
         replace
       />
     );

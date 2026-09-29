@@ -34,6 +34,7 @@ import useLoanFilters from "../../hooks/loans/seLoanFilters";
 
 import LoanDetailsDrawer from "../../components/loans/LoanDetailsDrawer";
 import LoanActionMenu from "../../components/loans/LoanActionMenu";
+import { can } from "../../config/permissions";
 
 import {
   getSchedulePaidAmount,
@@ -2330,6 +2331,7 @@ const handleMenuToggle = (event) => {
 
           {/* RECORD PAYMENT */}
 
+          {can("collections", "add") && (
           <button
             type="button"
             onClick={(event) => {
@@ -2360,6 +2362,7 @@ const handleMenuToggle = (event) => {
               size={13}
             />
           </button>
+          )}
 
           {/* MORE */}
 

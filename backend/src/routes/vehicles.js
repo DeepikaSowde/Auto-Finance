@@ -14,7 +14,7 @@ import {
   releaseVehicle,
   seizeVehicle,
 } from "../services/vehicleRepository.js";
-import { requireRole } from "../middleware/requireAuth.js";
+import { requirePermission } from "../middleware/requireAuth.js";
 import { asyncHandler } from "../util/asyncHandler.js";
 
 export const vehiclesRouter = Router();
@@ -64,31 +64,31 @@ const action = (handler) =>
 
 vehiclesRouter.post(
   "/:vehicleId/seize",
-  requireRole("admin"),
+  requirePermission("vehicles.edit"),
   action((req) => seizeVehicle(req.params.vehicleId, req.body || {}, req.user.username))
 );
 
 vehiclesRouter.post(
   "/:vehicleId/release",
-  requireRole("admin"),
+  requirePermission("vehicles.edit"),
   action((req) => releaseVehicle(req.params.vehicleId, req.body || {}, req.user.username))
 );
 
 vehiclesRouter.post(
   "/:vehicleId/pending-sale",
-  requireRole("admin"),
+  requirePermission("vehicles.edit"),
   action((req) => moveVehicleToPendingSale(req.params.vehicleId, req.body || {}, req.user.username))
 );
 
 vehiclesRouter.post(
   "/:vehicleId/complete-sale",
-  requireRole("admin"),
+  requirePermission("vehicles.edit"),
   action((req) => completeVehicleSale(req.params.vehicleId, req.body || {}, req.user.username))
 );
 
 vehiclesRouter.post(
   "/:vehicleId/cancel-sale",
-  requireRole("admin"),
+  requirePermission("vehicles.edit"),
   action((req) =>
     cancelVehicleSale(req.params.vehicleId, req.body?.reason || "", req.user.username)
   )

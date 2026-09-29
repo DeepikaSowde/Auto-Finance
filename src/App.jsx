@@ -1,5 +1,7 @@
 // src/App.jsx
 
+import { useEffect, useState } from "react";
+
 import {
   BrowserRouter,
   Routes,
@@ -49,10 +51,10 @@ import Login from "./pages/auth/Login";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 
 /* =========================================================
-   STAFF
+   USER MANAGEMENT
 ========================================================= */
 
-import StaffCollection from "./pages/staff/StaffCollection";
+import UserManagement from "./pages/users/UserManagement";
 
 /* =========================================================
    COLLECTION
@@ -81,7 +83,12 @@ import SoldVehicles from "./pages/vehicle/SoldVehicles";
 
 import {
   getSession,
+  refreshSession,
 } from "./services/authStorage";
+
+import {
+  getLandingPath,
+} from "./config/permissions";
 
 /* =========================================================
    TOASTS
@@ -106,6 +113,34 @@ const AppLayout = () => {
 
   const session = getSession();
 
+  /*
+   * Pick up permission changes an admin made while this user was signed
+   * in: re-read the session on load and whenever the tab regains focus.
+   */
+  const [, setSessionVersion] = useState(0);
+
+  useEffect(() => {
+    const sync = async () => {
+      if (!getSession()) {
+        return;
+      }
+
+      const next = await refreshSession();
+
+      if (!next) {
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      setSessionVersion((version) => version + 1);
+    };
+
+    sync();
+    window.addEventListener("focus", sync);
+
+    return () => window.removeEventListener("focus", sync);
+  }, [navigate]);
+
   /* =====================================================
      LOGIN PAGE
   ====================================================== */
@@ -123,41 +158,6 @@ const AppLayout = () => {
           element={
             <Navigate
               to="/login"
-              replace
-            />
-          }
-        />
-      </Routes>
-    );
-  }
-
-  /* =====================================================
-     STAFF AREA
-
-     Staff receives ONLY the Staff Collection page.
-     Admin sidebar is never rendered for staff.
-  ====================================================== */
-
-  if (
-    session?.role === "staff" &&
-    location.pathname.startsWith("/staff")
-  ) {
-    return (
-      <Routes>
-        <Route
-          path="/staff/collection"
-          element={
-            <ProtectedRoute role="staff">
-              <StaffCollection />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="*"
-          element={
-            <Navigate
-              to="/staff/collection"
               replace
             />
           }
@@ -334,6 +334,14 @@ const AppLayout = () => {
 
     if (
       path.startsWith(
+        "/users"
+      )
+    ) {
+      return "users";
+    }
+
+    if (
+      path.startsWith(
         "/activities"
       )
     ) {
@@ -473,6 +481,12 @@ const AppLayout = () => {
         );
         break;
 
+      case "users":
+        navigate(
+          "/users"
+        );
+        break;
+
       default:
         break;
     }
@@ -526,7 +540,11 @@ const AppLayout = () => {
             path="/"
             element={
               <Navigate
-                to="/dashboard"
+                to={
+                  getLandingPath(
+                    session
+                  ) || "/dashboard"
+                }
                 replace
               />
             }
@@ -539,7 +557,7 @@ const AppLayout = () => {
           <Route
             path="/dashboard"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="dashboard">
                 <Dashboard />
               </ProtectedRoute>
             }
@@ -552,7 +570,7 @@ const AppLayout = () => {
           <Route
             path="/customers"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="customers">
                 <CustomerPage />
               </ProtectedRoute>
             }
@@ -561,7 +579,12 @@ const AppLayout = () => {
           <Route
             path="/customers/onboarding"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute
+                anyOf={[
+                  ["loans", "add"],
+                  ["reloan", "add"],
+                ]}
+              >
                 <CustomerOnboarding />
               </ProtectedRoute>
             }
@@ -570,7 +593,7 @@ const AppLayout = () => {
           <Route
             path="/customers/:customerId"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="customers">
                 <CustomerDetails />
               </ProtectedRoute>
             }
@@ -585,7 +608,7 @@ const AppLayout = () => {
           <Route
             path="/loan"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="loans">
                 <LoanPage />
               </ProtectedRoute>
             }
@@ -626,7 +649,7 @@ const AppLayout = () => {
           <Route
             path="/reloan"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="reloan">
                 <ReLoan />
               </ProtectedRoute>
             }
@@ -635,7 +658,7 @@ const AppLayout = () => {
           <Route
             path="/reloan/eligibility/:loanId"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="reloan">
                 <ReLoanEligibility />
               </ProtectedRoute>
             }
@@ -648,7 +671,7 @@ const AppLayout = () => {
           <Route
             path="/collections"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="collections">
                 <CollectionManagement />
               </ProtectedRoute>
             }
@@ -664,7 +687,7 @@ const AppLayout = () => {
           <Route
             path="/repayment"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="collections" action="add">
                 <Repayment />
               </ProtectedRoute>
             }
@@ -673,7 +696,7 @@ const AppLayout = () => {
           <Route
             path="/repayment/*"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="collections" action="add">
                 <Repayment />
               </ProtectedRoute>
             }
@@ -686,7 +709,7 @@ const AppLayout = () => {
           <Route
             path="/reminders"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="reminders">
                 <Reminder />
               </ProtectedRoute>
             }
@@ -695,7 +718,7 @@ const AppLayout = () => {
           <Route
             path="/reminders/*"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="reminders">
                 <Reminder />
               </ProtectedRoute>
             }
@@ -708,7 +731,7 @@ const AppLayout = () => {
           <Route
             path="/control-center"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="control-center">
                 <ControlCenter />
               </ProtectedRoute>
             }
@@ -721,7 +744,7 @@ const AppLayout = () => {
           <Route
             path="/expense-control"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="expense">
                 <ExpenseControl />
               </ProtectedRoute>
             }
@@ -734,7 +757,7 @@ const AppLayout = () => {
           <Route
             path="/income"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="income">
                 <Income />
               </ProtectedRoute>
             }
@@ -747,7 +770,7 @@ const AppLayout = () => {
           <Route
             path="/investor"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="investor">
                 <Investor />
               </ProtectedRoute>
             }
@@ -760,7 +783,7 @@ const AppLayout = () => {
           <Route
             path="/ledger"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="ledger">
                 <Ledger />
               </ProtectedRoute>
             }
@@ -773,7 +796,7 @@ const AppLayout = () => {
           <Route
             path="/activities"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="dashboard">
                 <RecentActivities />
               </ProtectedRoute>
             }
@@ -786,7 +809,7 @@ const AppLayout = () => {
           <Route
             path="/settings"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute adminOnly>
                 <Settings />
               </ProtectedRoute>
             }
@@ -799,7 +822,7 @@ const AppLayout = () => {
           <Route
             path="/vehicles"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="vehicles">
                 <Vehicle />
               </ProtectedRoute>
             }
@@ -808,7 +831,7 @@ const AppLayout = () => {
           <Route
             path="/vehicles/all"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="vehicles">
                 <Vehicle />
               </ProtectedRoute>
             }
@@ -817,7 +840,7 @@ const AppLayout = () => {
           <Route
             path="/vehicles/seized"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="vehicles">
                 <SeizedVehicles />
               </ProtectedRoute>
             }
@@ -826,7 +849,7 @@ const AppLayout = () => {
           <Route
             path="/vehicles/released"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="vehicles">
                 <ReleasedVehicles />
               </ProtectedRoute>
             }
@@ -835,22 +858,34 @@ const AppLayout = () => {
           <Route
             path="/vehicles/sold"
             element={
-              <ProtectedRoute role="admin">
+              <ProtectedRoute module="vehicles">
                 <SoldVehicles />
               </ProtectedRoute>
             }
           />
 
           {/* =================================================
-              STAFF
+              USER MANAGEMENT
           ================================================== */}
 
           <Route
-            path="/staff/collection"
+            path="/users"
             element={
-              <ProtectedRoute role="staff">
-                <StaffCollection />
+              <ProtectedRoute adminOnly>
+                <UserManagement />
               </ProtectedRoute>
+            }
+          />
+
+          {/* Old staff-only screen: staff now use Collections. */}
+
+          <Route
+            path="/staff/*"
+            element={
+              <Navigate
+                to="/collections"
+                replace
+              />
             }
           />
 
@@ -863,10 +898,9 @@ const AppLayout = () => {
             element={
               <Navigate
                 to={
-                  session?.role ===
-                  "staff"
-                    ? "/staff/collection"
-                    : "/dashboard"
+                  getLandingPath(
+                    session
+                  ) || "/dashboard"
                 }
                 replace
               />

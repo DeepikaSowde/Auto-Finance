@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 
 import { getCategories, addCategory, deleteCategory } from "../../services/categoryStorage";
-import { getUsers, createUser, deleteUser } from "../../services/userStorage";
+import { useNavigate } from "react-router-dom";
 import { useToast } from "../../context/ToastContext";
 
 /* =========================================================
@@ -1104,155 +1104,24 @@ const CategoriesSection = () => {
 };
 
 /* =========================================================
-   ADMINS — real, persisted (unlike the rest of this page)
+   ADMINS — moved to its own User Management page
 ========================================================= */
 
 const AdminsSection = () => {
-  const toast = useToast();
-
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ username: "", password: "", name: "", role: "staff" });
-  const [saving, setSaving] = useState(false);
-
-  const load = async () => {
-    setLoading(true);
-    setUsers(await getUsers());
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
-
-  const handleCreate = async (event) => {
-    event.preventDefault();
-
-    setSaving(true);
-
-    try {
-      await createUser(form);
-      setForm({ username: "", password: "", name: "", role: "staff" });
-      await load();
-      toast.success(`${form.name} added as ${form.role}.`);
-    } catch (error) {
-      toast.error(error.message || "Couldn't add this user.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async (user) => {
-    try {
-      await deleteUser(user.id);
-      await load();
-      toast.success(`${user.name} removed.`);
-    } catch (error) {
-      toast.error(error.message || "Couldn't remove this user.");
-    }
-  };
+  const navigate = useNavigate();
 
   return (
     <SettingsGroup
       title="Admin & Staff Accounts"
-      description="Users who can sign in to this app. Changes here are saved immediately."
+      description="Accounts and staff permissions are managed on the User Management page."
     >
-      <form onSubmit={handleCreate} className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <input
-          required
-          value={form.name}
-          onChange={(event) => update("name", event.target.value)}
-          placeholder="Full name"
-          className="h-9 rounded-lg border border-slate-200 px-3 text-xs outline-none focus:border-[#9CCEB1]"
-        />
-
-        <input
-          required
-          value={form.username}
-          onChange={(event) => update("username", event.target.value)}
-          placeholder="Username"
-          className="h-9 rounded-lg border border-slate-200 px-3 text-xs outline-none focus:border-[#9CCEB1]"
-        />
-
-        <input
-          required
-          type="password"
-          value={form.password}
-          onChange={(event) => update("password", event.target.value)}
-          placeholder="Password"
-          className="h-9 rounded-lg border border-slate-200 px-3 text-xs outline-none focus:border-[#9CCEB1]"
-        />
-
-        <div className="flex gap-2">
-          <select
-            value={form.role}
-            onChange={(event) => update("role", event.target.value)}
-            className="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-[#9CCEB1]"
-          >
-            <option value="staff">Staff</option>
-            <option value="admin">Admin</option>
-          </select>
-
-          <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[#0B5D3B] px-3 text-[10px] font-bold text-white disabled:opacity-50"
-          >
-            <Plus size={13} /> Add
-          </button>
-        </div>
-      </form>
-
-      {loading ? (
-        <p className="text-[10px] text-slate-400">Loading...</p>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200">
-          <table className="w-full text-left">
-            <thead className="bg-slate-50 text-[9px] font-bold uppercase tracking-wide text-slate-400">
-              <tr>
-                {["Name", "Username", "Role", ""].map((header) => (
-                  <th key={header} className="px-3 py-2">
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-
-            <tbody>
-              {users.map((user) => (
-                <tr key={user.id} className="border-t border-slate-100">
-                  <td className="px-3 py-2.5 text-xs font-semibold text-[#17221D]">{user.name}</td>
-
-                  <td className="px-3 py-2.5 text-xs text-slate-500">{user.username}</td>
-
-                  <td className="px-3 py-2.5">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[9px] font-bold capitalize ${
-                        user.role === "admin" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {user.role}
-                    </span>
-                  </td>
-
-                  <td className="px-3 py-2.5 text-right">
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(user)}
-                      className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                      aria-label={`Remove ${user.name}`}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <button
+        type="button"
+        onClick={() => navigate("/users")}
+        className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#0B5D3B] px-3 text-[10px] font-bold text-white hover:bg-[#084A30]"
+      >
+        <UserCog size={13} /> Open User Management
+      </button>
     </SettingsGroup>
   );
 };

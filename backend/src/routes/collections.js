@@ -10,7 +10,7 @@ import {
   rejectCollection,
   reverseCollection,
 } from "../services/collectionRepository.js";
-import { requireRole } from "../middleware/requireAuth.js";
+import { requirePermission } from "../middleware/requireAuth.js";
 import { asyncHandler } from "../util/asyncHandler.js";
 
 export const collectionsRouter = Router();
@@ -38,10 +38,10 @@ collectionsRouter.get(
   })
 );
 
-// Staff submit collections; admins can too.
+// Recording a payment; it stays Pending until someone with approve access reviews it.
 collectionsRouter.post(
   "/",
-  requireRole("admin", "staff"),
+  requirePermission("collections.add"),
   asyncHandler(async (req, res) => {
     res.status(201).json(await createCollection(req.body || {}, req.user));
   })
@@ -49,7 +49,7 @@ collectionsRouter.post(
 
 collectionsRouter.post(
   "/:collectionId/approve",
-  requireRole("admin"),
+  requirePermission("collections.approve"),
   asyncHandler(async (req, res) => {
     res.json(await approveCollection(req.params.collectionId, req.user));
   })
@@ -57,7 +57,7 @@ collectionsRouter.post(
 
 collectionsRouter.post(
   "/:collectionId/reject",
-  requireRole("admin"),
+  requirePermission("collections.approve"),
   asyncHandler(async (req, res) => {
     res.json(
       await rejectCollection(req.params.collectionId, {
@@ -70,7 +70,7 @@ collectionsRouter.post(
 
 collectionsRouter.post(
   "/:collectionId/reverse",
-  requireRole("admin"),
+  requirePermission("collections.approve"),
   asyncHandler(async (req, res) => {
     res.json(
       await reverseCollection(req.params.collectionId, {

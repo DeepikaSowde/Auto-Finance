@@ -18,11 +18,15 @@ import {
   X,
   Search,
   UserRound,
+  UserCog,
+  LogOut,
 } from "lucide-react";
 
 import { useNavigate } from "react-router-dom";
 
 import { searchCustomers } from "./services/customerStorage";
+import { can, isAdmin } from "./config/permissions";
+import { getSession, logout } from "./services/authStorage";
 
 /* =========================================================
    MAIN NAVIGATION
@@ -177,6 +181,54 @@ const SETTINGS_ITEM = {
   icon: Settings,
 };
 
+const USERS_ITEM = {
+  id: "users",
+  label: "User Management",
+  icon: UserCog,
+};
+
+/* =========================================================
+   ACCESS
+
+   Which permission shows each item. Settings and User
+   Management are admin-only.
+========================================================= */
+
+const ITEM_ACCESS = {
+  dashboard: ["dashboard"],
+  customers: ["customers"],
+  "loans-all": ["loans"],
+  "loans-new": ["loans", "add"],
+  reloan: ["reloan"],
+  collections: ["collections"],
+  "vehicles-all": ["vehicles"],
+  "vehicles-seized": ["vehicles"],
+  "vehicles-released": ["vehicles"],
+  "vehicles-sold": ["vehicles"],
+  ledger: ["ledger"],
+  investor: ["investor"],
+  income: ["income"],
+  "expense-control": ["expense"],
+  reminders: ["reminders"],
+  "control-center": ["control-center"],
+};
+
+const canSeeItem = (id) => {
+  const access = ITEM_ACCESS[id];
+
+  return access ? can(access[0], access[1] || "view") : isAdmin();
+};
+
+// Drops items the user can't open, and groups left with no children.
+const visibleItems = (items) =>
+  items
+    .map((item) =>
+      item.children
+        ? { ...item, children: item.children.filter((child) => canSeeItem(child.id)) }
+        : item
+    )
+    .filter((item) => (item.children ? item.children.length > 0 : canSeeItem(item.id)));
+
 /* =========================================================
    SIDEBAR
 ========================================================= */
@@ -186,6 +238,13 @@ const SideBar = ({
   onNavigate,
 }) => {
   const navigate = useNavigate();
+
+  const session = getSession();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login", { replace: true });
+  };
 
   const [
     collapsed,
@@ -1189,16 +1248,18 @@ const SideBar = ({
         >
           <div className="flex min-h-full flex-col">
             <div className="space-y-1">
-              {NAV_ITEMS.map(
+              {visibleItems(NAV_ITEMS).map(
                 renderNavButton
               )}
             </div>
 
             {/* SEARCH CUSTOMER */}
 
-            <div className="mt-auto pt-4">
-              {renderSearchButton()}
-            </div>
+            {can("customers") && (
+              <div className="mt-auto pt-4">
+                {renderSearchButton()}
+              </div>
+            )}
           </div>
         </nav>
 
@@ -1218,17 +1279,54 @@ const SideBar = ({
           {/* ALERTS / REMINDERS / CONTROL CENTER */}
 
           <div className="space-y-1">
-            {BOTTOM_NAV_ITEMS.map(
+            {visibleItems(BOTTOM_NAV_ITEMS).map(
               renderNavButton
             )}
           </div>
 
-          {/* SETTINGS */}
+          {/* USER MANAGEMENT + SETTINGS (admin only) */}
 
-          <div className="mt-1">
-            {renderNavButton(
-              SETTINGS_ITEM
+          {isAdmin() && (
+            <div className="mt-1 space-y-1">
+              {renderNavButton(
+                USERS_ITEM
+              )}
+
+              {renderNavButton(
+                SETTINGS_ITEM
+              )}
+            </div>
+          )}
+
+          {/* SIGNED-IN USER */}
+
+          <div
+            className={`
+              mt-2 flex items-center rounded-lg border border-[#174D38] py-2
+              ${collapsed ? "justify-center px-1.5" : "gap-2 px-2.5"}
+            `}
+          >
+            {!collapsed && (
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[12px] font-semibold text-white">
+                  {session?.name || session?.username || "User"}
+                </p>
+
+                <p className="text-[10px] capitalize text-[#8EAF9E]">
+                  {session?.role || ""}
+                </p>
+              </div>
             )}
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Sign out"
+              aria-label="Sign out"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[#A8C2B3] transition-colors hover:bg-[#174D38] hover:text-white"
+            >
+              <LogOut size={16} strokeWidth={2} />
+            </button>
           </div>
 
           {/* COLLAPSE */}

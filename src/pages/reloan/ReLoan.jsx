@@ -19,6 +19,7 @@ import {
   getReLoanRules,
   saveReLoanEligibility,
 } from "../../services/reloanStorage";
+import { can } from "../../config/permissions";
 import { getCustomers } from "../../services/customerStorage";
 
 const money = (value) =>
@@ -613,7 +614,7 @@ const EligibilityResultModal = ({
           <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
             Close
           </button>
-          {result.eligible && (
+          {result.eligible && can("reloan", "add") && (
             <button type="button" onClick={onStart} className="rounded-lg bg-[#0B6B43] px-4 py-2 text-xs font-extrabold text-white">
               Start New Loan
             </button>

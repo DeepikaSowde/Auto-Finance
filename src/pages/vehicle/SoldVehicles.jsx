@@ -37,6 +37,7 @@ import {
   getLoans,
   getOutstandingAmount,
 } from "../../services/customerStorage";
+import { can } from "../../config/permissions";
 
 import {
   getVehicleRecords,
@@ -2185,7 +2186,7 @@ const SoldActions = ({
               }
             />
 
-            {isPending && (
+            {isPending && can("vehicles", "edit") && (
               <>
                 <div className="my-1 border-t border-slate-100" />
 
@@ -2882,7 +2883,7 @@ const SaleDetailsModal = ({
             Close
           </button>
 
-          {isPending && (
+          {isPending && can("vehicles", "edit") && (
             <button
               type="button"
               onClick={

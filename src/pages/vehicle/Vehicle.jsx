@@ -28,6 +28,7 @@ import {
   getCustomers,
   getOutstandingAmount,
 } from "../../services/customerStorage";
+import { can } from "../../config/permissions";
 
 import {
   addVehicleSeizure,
@@ -1460,6 +1461,7 @@ const VehicleActionsMenu = ({
    * in Seized Vehicles page.
    */
   const canSeize =
+    can("vehicles", "edit") &&
     !isSeized &&
     status !== "pending sale" &&
     status !== "sold";

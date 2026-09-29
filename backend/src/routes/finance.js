@@ -49,7 +49,10 @@ import {
   saveEligibilityCheck,
   saveReLoanRules,
 } from "../services/reloanRepository.js";
-import { requireRole } from "../middleware/requireAuth.js";
+import { requirePermission, requireRole } from "../middleware/requireAuth.js";
+
+// Money data also feeds the overview screens, so those can read it too.
+const OVERVIEW_READERS = ["ledger.view", "dashboard.view", "control-center.view"];
 import { asyncHandler } from "../util/asyncHandler.js";
 
 /* =========================================================
@@ -60,6 +63,7 @@ export const investorsRouter = Router();
 
 investorsRouter.get(
   "/",
+  requirePermission("investor.view", "loans.add", ...OVERVIEW_READERS),
   asyncHandler(async (req, res) => {
     res.json(await getInvestors());
   })
@@ -67,6 +71,7 @@ investorsRouter.get(
 
 investorsRouter.get(
   "/summary",
+  requirePermission("investor.view", "loans.add", ...OVERVIEW_READERS),
   asyncHandler(async (req, res) => {
     res.json(await getFundingSummary());
   })
@@ -74,6 +79,7 @@ investorsRouter.get(
 
 investorsRouter.get(
   "/transactions",
+  requirePermission("investor.view", "loans.add", ...OVERVIEW_READERS),
   asyncHandler(async (req, res) => {
     res.json(await getInvestorTransactions(req.query.investorId));
   })
@@ -81,6 +87,7 @@ investorsRouter.get(
 
 investorsRouter.get(
   "/:investorId",
+  requirePermission("investor.view", "loans.add", ...OVERVIEW_READERS),
   asyncHandler(async (req, res) => {
     const investor = await getInvestorById(req.params.investorId);
 
@@ -94,7 +101,7 @@ investorsRouter.get(
 
 investorsRouter.post(
   "/",
-  requireRole("admin"),
+  requirePermission("investor.add"),
   asyncHandler(async (req, res) => {
     res.status(201).json(await createInvestor(req.body || {}));
   })
@@ -102,7 +109,7 @@ investorsRouter.post(
 
 investorsRouter.post(
   "/:investorId/investments",
-  requireRole("admin"),
+  requirePermission("investor.add"),
   asyncHandler(async (req, res) => {
     res
       .status(201)
@@ -113,7 +120,7 @@ investorsRouter.post(
 // Funding a loan draws on the whole pool, so it is not nested under an investor.
 investorsRouter.post(
   "/allocations",
-  requireRole("admin"),
+  requirePermission("investor.add", "loans.add", "reloan.add"),
   asyncHandler(async (req, res) => {
     res.status(201).json(await allocateInvestmentPoolToLoan(req.body || {}));
   })
@@ -127,6 +134,7 @@ export const expensesRouter = Router();
 
 expensesRouter.get(
   "/",
+  requirePermission("expense.view", ...OVERVIEW_READERS),
   asyncHandler(async (req, res) => {
     res.json(await getExpenses());
   })
@@ -134,6 +142,7 @@ expensesRouter.get(
 
 expensesRouter.get(
   "/:expenseId",
+  requirePermission("expense.view", ...OVERVIEW_READERS),
   asyncHandler(async (req, res) => {
     const expense = await getExpenseById(req.params.expenseId);
 
@@ -147,7 +156,7 @@ expensesRouter.get(
 
 expensesRouter.post(
   "/",
-  requireRole("admin"),
+  requirePermission("expense.add"),
   asyncHandler(async (req, res) => {
     res.status(201).json(await addExpense(req.body || {}));
   })
@@ -155,7 +164,7 @@ expensesRouter.post(
 
 expensesRouter.put(
   "/:expenseId",
-  requireRole("admin"),
+  requirePermission("expense.edit"),
   asyncHandler(async (req, res) => {
     const expense = await updateExpense(req.params.expenseId, req.body || {});
 
@@ -169,7 +178,7 @@ expensesRouter.put(
 
 expensesRouter.delete(
   "/:expenseId",
-  requireRole("admin"),
+  requirePermission("expense.delete"),
   asyncHandler(async (req, res) => {
     if (!(await deleteExpense(req.params.expenseId))) {
       return res.status(404).json({ error: "Expense not found." });
@@ -187,6 +196,7 @@ export const incomesRouter = Router();
 
 incomesRouter.get(
   "/",
+  requirePermission("income.view", ...OVERVIEW_READERS),
   asyncHandler(async (req, res) => {
     res.json(await getIncomes());
   })
@@ -194,6 +204,7 @@ incomesRouter.get(
 
 incomesRouter.get(
   "/:incomeId",
+  requirePermission("income.view", ...OVERVIEW_READERS),
   asyncHandler(async (req, res) => {
     const income = await getIncomeById(req.params.incomeId);
 
@@ -207,7 +218,7 @@ incomesRouter.get(
 
 incomesRouter.post(
   "/",
-  requireRole("admin"),
+  requirePermission("income.add"),
   asyncHandler(async (req, res) => {
     res.status(201).json(await addIncome(req.body || {}));
   })
@@ -215,7 +226,7 @@ incomesRouter.post(
 
 incomesRouter.put(
   "/:incomeId",
-  requireRole("admin"),
+  requirePermission("income.edit"),
   asyncHandler(async (req, res) => {
     const income = await updateIncome(req.params.incomeId, req.body || {});
 
@@ -229,7 +240,7 @@ incomesRouter.put(
 
 incomesRouter.delete(
   "/:incomeId",
-  requireRole("admin"),
+  requirePermission("income.delete"),
   asyncHandler(async (req, res) => {
     if (!(await deleteIncome(req.params.incomeId))) {
       return res.status(404).json({ error: "Income not found." });
@@ -247,6 +258,7 @@ export const categoriesRouter = Router();
 
 categoriesRouter.get(
   "/",
+  requirePermission("income.view", "expense.view"),
   asyncHandler(async (req, res) => {
     res.json(await getCategories(req.query.type));
   })
@@ -254,7 +266,7 @@ categoriesRouter.get(
 
 categoriesRouter.post(
   "/",
-  requireRole("admin"),
+  requirePermission("income.add", "expense.add"),
   asyncHandler(async (req, res) => {
     const { type, name } = req.body || {};
 
@@ -282,6 +294,7 @@ export const reloanRouter = Router();
 
 reloanRouter.get(
   "/rules",
+  requirePermission("reloan.view", "customers.view", "loans.view", "loans.add"),
   asyncHandler(async (req, res) => {
     res.json(await getReLoanRules());
   })
@@ -289,7 +302,7 @@ reloanRouter.get(
 
 reloanRouter.put(
   "/rules",
-  requireRole("admin"),
+  requirePermission("reloan.edit"),
   asyncHandler(async (req, res) => {
     res.json(await saveReLoanRules(req.body || {}));
   })
@@ -297,13 +310,17 @@ reloanRouter.put(
 
 reloanRouter.get(
   "/eligibility",
+  requirePermission("reloan.view", "customers.view", "loans.view"),
   asyncHandler(async (req, res) => {
     res.json(await getEligibilityChecks(req.query.loanId));
   })
 );
 
+// Every eligibility check is logged as an audit record, including ones
+// run just by opening a customer or re-loan screen.
 reloanRouter.post(
   "/eligibility",
+  requirePermission("reloan.view", "customers.view", "loans.view"),
   asyncHandler(async (req, res) => {
     res.status(201).json(await saveEligibilityCheck(req.body || {}));
   })
@@ -317,6 +334,7 @@ export const referralsRouter = Router();
 
 referralsRouter.get(
   "/",
+  requirePermission("expense.view"),
   asyncHandler(async (req, res) => {
     res.json(await getReferrals());
   })
@@ -324,6 +342,7 @@ referralsRouter.get(
 
 referralsRouter.post(
   "/",
+  requirePermission("expense.add"),
   asyncHandler(async (req, res) => {
     res.status(201).json(await addReferral(req.body || {}));
   })
@@ -331,6 +350,7 @@ referralsRouter.post(
 
 referralsRouter.post(
   "/:referralId/pay",
+  requirePermission("expense.approve"),
   asyncHandler(async (req, res) => {
     const referral = await markReferralPaid(req.params.referralId, req.body || {});
 
@@ -344,7 +364,7 @@ referralsRouter.post(
 
 referralsRouter.delete(
   "/:referralId",
-  requireRole("admin"),
+  requirePermission("expense.delete"),
   asyncHandler(async (req, res) => {
     if (!(await deleteReferral(req.params.referralId))) {
       return res.status(404).json({ error: "Referral commission not found." });
@@ -362,6 +382,7 @@ export const remindersRouter = Router();
 
 remindersRouter.get(
   "/",
+  requirePermission("reminders.view"),
   asyncHandler(async (req, res) => {
     res.json(await getReminders());
   })
@@ -369,6 +390,7 @@ remindersRouter.get(
 
 remindersRouter.post(
   "/",
+  requirePermission("reminders.add"),
   asyncHandler(async (req, res) => {
     res.status(201).json(await addReminder(req.body || {}));
   })
@@ -376,6 +398,7 @@ remindersRouter.post(
 
 remindersRouter.put(
   "/:reminderId",
+  requirePermission("reminders.edit"),
   asyncHandler(async (req, res) => {
     const reminder = await updateReminder(req.params.reminderId, req.body || {});
 

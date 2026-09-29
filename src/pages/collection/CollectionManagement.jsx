@@ -7,7 +7,6 @@ import {
   IndianRupee,
   Search,
   XCircle,
-  LogOut,
   X,
   AlertTriangle,
   ShieldCheck,
@@ -16,6 +15,8 @@ import {
   CalendarDays,
   Filter,
   BarChart3,
+  ClipboardCheck,
+  HandCoins,
 } from "lucide-react";
 
 import {
@@ -34,12 +35,10 @@ import {
 } from "../../services/collectionStorage";
 
 import {
-  logout,
-} from "../../services/authStorage";
+  can,
+} from "../../config/permissions";
 
-import {
-  useNavigate,
-} from "react-router-dom";
+import RecordCollection from "./RecordCollection";
 
 /* =========================================================
    MAIN
@@ -62,9 +61,34 @@ const EMPTY_HISTORY_SUMMARY = {
   byCustomer: [],
 };
 
+/*
+ * One Collections page for everyone, shaped by permissions:
+ *   add     – "Record Payment" tab (submits a Pending collection)
+ *   approve – approve / reject from the review details
+ *   view    – review list and collection data
+ */
 const CollectionManagement = () => {
-  const navigate =
-    useNavigate();
+  const canRecord =
+    can(
+      "collections",
+      "add"
+    );
+
+  const canApprove =
+    can(
+      "collections",
+      "approve"
+    );
+
+  const [
+    activeTab,
+    setActiveTab,
+  ] = useState(
+    canRecord &&
+      !canApprove
+      ? "record"
+      : "review"
+  );
 
   /* =======================================================
      STATE
@@ -676,21 +700,6 @@ const CollectionManagement = () => {
   };
 
   /* =======================================================
-     LOGOUT
-  ======================================================= */
-
-  const handleLogout = () => {
-    logout();
-
-    navigate(
-      "/login",
-      {
-        replace: true,
-      }
-    );
-  };
-
-  /* =======================================================
      RENDER
   ======================================================= */
 
@@ -750,13 +759,18 @@ const CollectionManagement = () => {
               text-slate-400
             "
           >
-            Review and approve
-            staff-submitted
-            collections
+            {canRecord && canApprove
+              ? "Record customer payments, then review and approve them"
+              : canApprove
+                ? "Review and approve submitted collections"
+                : canRecord
+                  ? "Record customer payments for admin approval"
+                  : "Submitted collections and their status"}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
+          {activeTab === "review" && (
           <button
             type="button"
             onClick={() =>
@@ -791,39 +805,75 @@ const CollectionManagement = () => {
               : "View Collection Data"}
           </button>
 
-          <button
-            type="button"
-            onClick={
-              handleLogout
-            }
-            className="
-              inline-flex
-              h-9
-              items-center
-              justify-center
-              gap-1.5
-              self-start
-              rounded-lg
-              border
-              border-slate-200
-              bg-white
-              px-3
-              text-[9px]
-              font-bold
-              text-slate-500
-              transition
-              hover:bg-slate-50
-              sm:self-auto
-            "
-          >
-            <LogOut
-              size={13}
-            />
-            Logout
-          </button>
+          )}
         </div>
       </div>
 
+      {/* ===================================================
+          TABS
+      =================================================== */}
+
+      {canRecord && (
+        <div
+          className="
+            mt-4
+            inline-flex
+            rounded-xl
+            border
+            border-[#D8E9DF]
+            bg-white
+            p-1
+            shadow-sm
+          "
+        >
+          <TabButton
+            active={
+              activeTab ===
+              "record"
+            }
+            icon={HandCoins}
+            label="Record Payment"
+            onClick={() =>
+              setActiveTab(
+                "record"
+              )
+            }
+          />
+
+          <TabButton
+            active={
+              activeTab ===
+              "review"
+            }
+            icon={ClipboardCheck}
+            label={
+              canApprove
+                ? `Review & Approve${
+                    pendingCollections.length
+                      ? ` (${pendingCollections.length})`
+                      : ""
+                  }`
+                : "Submitted Collections"
+            }
+            onClick={() =>
+              setActiveTab(
+                "review"
+              )
+            }
+          />
+        </div>
+      )}
+
+      {activeTab ===
+        "record" && (
+        <div className="mt-4">
+          <RecordCollection />
+        </div>
+      )}
+
+      {activeTab ===
+        "review" && (
+      <>
       {/* ===================================================
           ACTION ERROR
       =================================================== */}
@@ -2090,6 +2140,9 @@ const CollectionManagement = () => {
         )}
       </div>
 
+      </>
+      )}
+
       {/* ===================================================
           DETAILS MODAL
       =================================================== */}
@@ -2111,6 +2164,9 @@ const CollectionManagement = () => {
           actionError={
             actionError
           }
+          canApprove={
+            canApprove
+          }
           onApprove={
             handleApprove
           }
@@ -2130,11 +2186,47 @@ const CollectionManagement = () => {
 };
 
 /* =========================================================
+   TAB BUTTON
+========================================================= */
+
+const TabButton = ({
+  active,
+  icon: Icon,
+  label,
+  onClick,
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`
+      inline-flex
+      h-8
+      items-center
+      gap-1.5
+      rounded-lg
+      px-3
+      text-[10px]
+      font-bold
+      transition
+      ${
+        active
+          ? "bg-[#0B6B43] text-white shadow-sm"
+          : "text-slate-500 hover:bg-[#F0F7F3] hover:text-[#0B5D3B]"
+      }
+    `}
+  >
+    <Icon size={13} />
+    {label}
+  </button>
+);
+
+/* =========================================================
    COLLECTION DETAILS MODAL
 ========================================================= */
 
 const CollectionDetailsModal = ({
   collection,
+  canApprove,
   rejectRemarks,
   setRejectRemarks,
   processing,
@@ -3252,7 +3344,27 @@ const CollectionDetailsModal = ({
               APPROVAL ACTIONS
           ================================================== */}
 
-          {isPending && (
+          {isPending &&
+            !canApprove && (
+            <p
+              className="
+                rounded-lg
+                border
+                border-amber-200
+                bg-amber-50
+                px-3
+                py-2.5
+                text-[10px]
+                font-semibold
+                text-amber-700
+              "
+            >
+              Waiting for approval.
+            </p>
+          )}
+
+          {isPending &&
+            canApprove && (
             <>
               <textarea
                 value={

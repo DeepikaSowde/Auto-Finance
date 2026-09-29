@@ -6,6 +6,8 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
+import { can } from "../../config/permissions";
+
 const LoanActionMenu = ({
   onClose,
   onView,
@@ -89,21 +91,25 @@ const LoanActionMenu = ({
         }
       />
 
-      <Action
-        icon={CreditCard}
-        label="Record Payment"
-        onClick={() =>
-          action("payment")
-        }
-      />
+      {can("collections", "add") && (
+        <Action
+          icon={CreditCard}
+          label="Record Payment"
+          onClick={() =>
+            action("payment")
+          }
+        />
+      )}
 
-      <Action
-        icon={Pencil}
-        label="Edit Loan"
-        onClick={() =>
-          action("edit")
-        }
-      />
+      {can("loans", "edit") && (
+        <Action
+          icon={Pencil}
+          label="Edit Loan"
+          onClick={() =>
+            action("edit")
+          }
+        />
+      )}
 
       <Action
         icon={FileText}
@@ -113,13 +119,15 @@ const LoanActionMenu = ({
         }
       />
 
-      <Action
-        icon={CheckCircle2}
-        label="Close Loan"
-        onClick={() =>
-          action("close")
-        }
-      />
+      {can("loans", "edit") && (
+        <Action
+          icon={CheckCircle2}
+          label="Close Loan"
+          onClick={() =>
+            action("close")
+          }
+        />
+      )}
 
     </div>
   );

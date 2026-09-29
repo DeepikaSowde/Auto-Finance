@@ -37,6 +37,8 @@ import {
   getMonthlyExpenseSummary,
 } from "../../services/expenseStorage";
 
+import { can } from "../../config/permissions";
+
 /* =========================================================
    MAIN
 ========================================================= */
@@ -808,6 +810,7 @@ const ExpenseControl = () => {
               : "View Expense Data"}
           </button>
 
+          {can("expense", "add") && (
           <button
             type="button"
             onClick={() => {
@@ -842,6 +845,7 @@ const ExpenseControl = () => {
 
             Add Expense
           </button>
+          )}
         </div>
       </div>
 
@@ -3715,6 +3719,7 @@ const ExpenseViewModal = ({
             py-3.5
           "
         >
+          {can("expense", "delete") ? (
           <button
             type="button"
             onClick={
@@ -3729,6 +3734,9 @@ const ExpenseViewModal = ({
           >
             Delete Expense
           </button>
+          ) : (
+            <span />
+          )}
 
           <div
             className="
@@ -3756,6 +3764,7 @@ const ExpenseViewModal = ({
               Close
             </button>
 
+            {can("expense", "edit") && (
             <button
               type="button"
               onClick={
@@ -3781,6 +3790,7 @@ const ExpenseViewModal = ({
 
               Edit
             </button>
+            )}
           </div>
         </div>
       </div>

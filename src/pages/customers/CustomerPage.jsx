@@ -36,6 +36,7 @@ import {
   getOutstandingAmount,
 } from "../../services/customerStorage";
 import LoanDetailsDrawer from "../../components/loans/LoanDetailsDrawer";
+import { can } from "../../config/permissions";
 import CustomerActivityHistoryModal from "../../components/customers/CustomerActivityHistoryModal";
 /* =========================================================
    BASE HELPERS
@@ -2379,6 +2380,7 @@ const CustomerTable = ({
   }}
 />
 
+                            {can("collections", "add") && (
                             <MenuItem
                               label="Add Payment"
                               icon={
@@ -2390,6 +2392,7 @@ const CustomerTable = ({
                                 )
                               }
                             />
+                            )}
 
                             <MenuItem
                               label="Upload Documents"
@@ -2427,6 +2430,7 @@ const CustomerTable = ({
                               }
                             />
 
+                            {can("reminders", "add") && (
                             <MenuItem
                               label="Send Payment Reminder"
                               icon={
@@ -2438,7 +2442,10 @@ const CustomerTable = ({
                                 )
                               }
                             />
+                            )}
 
+                            {can("customers", "edit") && (
+                            <>
                             <div className="border-t border-slate-100" />
 
                             <MenuItem
@@ -2468,6 +2475,8 @@ const CustomerTable = ({
                                 }
                               }}
                             />
+                            </>
+                            )}
                           </div>
                         )}
                       </div>
@@ -3163,6 +3172,7 @@ const EmptyContent = ({
         Add a customer to start managing customer and vehicle finance records.
       </p>
 
+      {can("loans", "add") && (
       <button
         type="button"
         onClick={onAdd}
@@ -3188,6 +3198,7 @@ const EmptyContent = ({
 
         Add Customer
       </button>
+      )}
     </div>
   );
 };

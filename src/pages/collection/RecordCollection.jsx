@@ -1,4 +1,8 @@
-// src/pages/staff/StaffCollection.jsx
+// src/pages/collection/RecordCollection.jsx
+//
+// "Record Payment" tab of the Collections page (users with the
+// collections "add" permission). Submitted payments stay Pending until
+// someone with the "approve" permission reviews them.
 
 import {
   useEffect,
@@ -14,7 +18,6 @@ import {
   CheckCircle2,
   Clock3,
   IndianRupee,
-  LogOut,
   MapPin,
   Phone,
   Receipt,
@@ -24,10 +27,6 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-
-import {
-  useNavigate,
-} from "react-router-dom";
 
 import {
   getLoans,
@@ -41,6 +40,7 @@ import {
 import {
   previewRepayment,
   getPenaltyConfig,
+  getOverdueDays,
   getOutstandingPenaltySummary,
   getScheduleOutstanding,
   getRepaymentBuckets,
@@ -229,6 +229,13 @@ const getLoanNumber = (
     "Loan"
   );
 };
+
+const getInstallmentNumber = (
+  row
+) =>
+  row?.installmentNumber ??
+  row?.installmentNo ??
+  "—";
 
 const getLoanAmount = (
   loan
@@ -452,10 +459,7 @@ const safeGetCollections = async () => {
    MAIN
 ========================================================= */
 
-const StaffCollection = () => {
-  const navigate =
-    useNavigate();
-
+const RecordCollection = () => {
   /* =======================================================
      STATE
   ====================================================== */
@@ -509,23 +513,6 @@ const StaffCollection = () => {
     error,
     setError,
   ] = useState("");
-
-  /* =======================================================
-     LOGOUT
-  ====================================================== */
-
-  const handleLogout = () => {
-    localStorage.removeItem(
-      "auto_finance_auth"
-    );
-
-    navigate(
-      "/login",
-      {
-        replace: true,
-      }
-    );
-  };
 
   /* =======================================================
      SYNC
@@ -2973,226 +2960,8 @@ const StaffCollection = () => {
   ====================================================== */
 
   return (
-    <div
-      className="
-        min-h-full
-        bg-[#F5F8F6]
-        p-3
-        sm:p-4
-        lg:p-5
-      "
-    >
-      <div className="mx-auto w-full max-w-[1500px]">
-
-        {/* =================================================
-            HEADER
-        ================================================== */}
-
-        <div
-          className="
-            mb-4
-            overflow-hidden
-            rounded-2xl
-            border
-            border-[#DCE9E1]
-            bg-white
-            shadow-[0_8px_30px_rgba(15,23,42,0.05)]
-          "
-        >
-          <div
-            className="
-              flex
-              flex-col
-              gap-4
-              px-5
-              py-4
-              sm:flex-row
-              sm:items-center
-              sm:justify-between
-              lg:px-6
-              lg:py-5
-            "
-          >
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span
-                  className="
-                    inline-flex
-                    items-center
-                    rounded-full
-                    bg-[#EAF5EF]
-                    px-2.5
-                    py-1
-                    text-[9px]
-                    font-extrabold
-                    uppercase
-                    tracking-[0.08em]
-                    text-[#0B6B43]
-                  "
-                >
-                  MotoLend
-                </span>
-
-                <span
-                  className="
-                    h-1
-                    w-1
-                    rounded-full
-                    bg-[#A8C9B6]
-                  "
-                />
-
-                <span
-                  className="
-                    text-[9px]
-                    font-bold
-                    uppercase
-                    tracking-[0.08em]
-                    text-slate-400
-                  "
-                >
-                  Staff Collection
-                </span>
-              </div>
-
-              <h1
-                className="
-                  mt-2
-                  text-[24px]
-                  font-extrabold
-                  tracking-[-0.03em]
-                  text-[#17221D]
-                  sm:text-[27px]
-                "
-              >
-                Staff Repayment
-              </h1>
-
-              <p
-                className="
-                  mt-1
-                  max-w-[650px]
-                  text-[11px]
-                  font-medium
-                  leading-relaxed
-                  text-slate-500
-                  sm:text-[12px]
-                "
-              >
-                Today&apos;s due, overdue and customer advance payments
-              </p>
-            </div>
-
-            <div
-              className="
-                flex
-                flex-wrap
-                items-center
-                gap-2
-              "
-            >
-              <div
-                className="
-                  inline-flex
-                  min-w-[145px]
-                  items-center
-                  gap-3
-                  rounded-xl
-                  border
-                  border-[#D7E8DE]
-                  bg-[#F4FAF6]
-                  px-3.5
-                  py-2.5
-                "
-              >
-                <div
-                  className="
-                    flex
-                    h-8
-                    w-8
-                    shrink-0
-                    items-center
-                    justify-center
-                    rounded-lg
-                    bg-[#DDF1E5]
-                    text-[#0B6B43]
-                  "
-                >
-                  <Clock3 size={15} />
-                </div>
-
-                <div>
-                  <p
-                    className="
-                      text-[8px]
-                      font-extrabold
-                      uppercase
-                      tracking-[0.06em]
-                      text-slate-400
-                    "
-                  >
-                    Open Today
-                  </p>
-
-                  <p
-                    className="
-                      mt-0.5
-                      text-[12px]
-                      font-extrabold
-                      text-[#0B6B43]
-                    "
-                  >
-                    {collectibleRows.length} active loan
-                    {collectibleRows.length === 1
-                      ? ""
-                      : "s"}
-                  </p>
-                </div>
-
-                <span
-                  className="
-                    ml-auto
-                    h-2
-                    w-2
-                    rounded-full
-                    bg-[#15A05C]
-                    shadow-[0_0_0_4px_rgba(21,160,92,0.10)]
-                  "
-                />
-              </div>
-
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="
-                  inline-flex
-                  h-10
-                  items-center
-                  justify-center
-                  gap-2
-                  rounded-xl
-                  border
-                  border-slate-200
-                  bg-white
-                  px-4
-                  text-[10px]
-                  font-extrabold
-                  text-slate-600
-                  shadow-sm
-                  transition-all
-                  duration-200
-                  hover:-translate-y-[1px]
-                  hover:border-red-200
-                  hover:bg-red-50
-                  hover:text-red-600
-                "
-              >
-                <LogOut size={14} />
-                Logout
-              </button>
-            </div>
-          </div>
-        </div>
+    <div>
+      <div className="w-full">
 
         {/* =================================================
             MESSAGE
@@ -6741,4 +6510,4 @@ const EmptyState = () => (
   </div>
 );
 
-export default StaffCollection;
+export default RecordCollection;

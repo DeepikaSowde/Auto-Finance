@@ -8,7 +8,7 @@
 // render, so the session snapshot is mirrored into sessionStorage and the
 // bearer token in api.js authorises the actual API calls.
 
-import { apiPost, setToken } from "./api";
+import { apiGet, apiPost, setToken } from "./api";
 
 const SESSION_KEY = "auto_finance_session";
 
@@ -48,6 +48,43 @@ export const getSession = () => {
     console.error("Failed to read login session:", error);
 
     return null;
+  }
+};
+
+/*
+ * Re-reads the signed-in user from the API so permission changes an admin
+ * made take effect without signing out. Returns the fresh session, or null
+ * when the token is no longer valid (the local session is cleared then).
+ */
+export const refreshSession = async () => {
+  const current = getSession();
+
+  if (!current) {
+    return null;
+  }
+
+  try {
+    const { user } = await apiGet("/auth/me");
+    const next = { ...current, ...user };
+
+    storeSession(next);
+
+    return next;
+  } catch (error) {
+    if (error?.status === 401) {
+      try {
+        sessionStorage.removeItem(SESSION_KEY);
+      } catch {
+        // ignore
+      }
+
+      setToken("");
+
+      return null;
+    }
+
+    // Network hiccup: keep the session we have.
+    return current;
   }
 };
 

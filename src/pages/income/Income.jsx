@@ -9,6 +9,7 @@ import { CircleDollarSign, Plus, Search, Trash2, Pencil, X, Wallet } from "lucid
 
 import { getIncomes, addIncome, updateIncome, deleteIncome } from "../../services/incomeStorage";
 import { getCategories, addCategory } from "../../services/categoryStorage";
+import { can } from "../../config/permissions";
 import { useToast } from "../../context/ToastContext";
 
 const PAYMENT_MODES = ["Cash", "Bank", "UPI", "Cheque"];
@@ -342,6 +343,7 @@ const Income = () => {
           </p>
         </div>
 
+{can("income", "add") && (
         <button
           type="button"
           onClick={() => {
@@ -352,6 +354,7 @@ const Income = () => {
         >
           <Plus size={14} /> Add Income
         </button>
+)}
       </header>
 
       <section className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -442,6 +445,7 @@ const Income = () => {
                     <td className="px-4 py-3 text-xs font-bold text-[#0B6B43]">{money(income.amount)}</td>
 
                     <td className="whitespace-nowrap px-4 py-3 text-right">
+{can("income", "edit") && (
                       <button
                         type="button"
                         onClick={() => {
@@ -453,7 +457,9 @@ const Income = () => {
                       >
                         <Pencil size={13} />
                       </button>
+)}
 
+{can("income", "delete") && (
                       <button
                         type="button"
                         onClick={() => setDeleting(income)}
@@ -462,6 +468,7 @@ const Income = () => {
                       >
                         <Trash2 size={13} />
                       </button>
+)}
                     </td>
                   </tr>
                 ))}

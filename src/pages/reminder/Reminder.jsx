@@ -38,6 +38,8 @@ import {
   updateReminder,
 } from "../../services/reminderStorage";
 
+import { can } from "../../config/permissions";
+
 /* =========================================================
    CONSTANTS
 ========================================================= */
@@ -2022,10 +2024,13 @@ const Reminder = () => {
           loan={
             selectedLoan
           }
-          onSend={() =>
-            openSendReminder(
-              selectedLoan
-            )
+          onSend={
+            can("reminders", "add")
+              ? () =>
+                  openSendReminder(
+                    selectedLoan
+                  )
+              : undefined
           }
           onClear={() =>
             setSelectedLoan(
@@ -2130,10 +2135,13 @@ const Reminder = () => {
                       reminder
                     )
                   }
-                  onStop={() =>
-                    handleStopReminder(
-                      reminder.id
-                    )
+                  onStop={
+                    can("reminders", "edit")
+                      ? () =>
+                          handleStopReminder(
+                            reminder.id
+                          )
+                      : undefined
                   }
                 />
               )
@@ -2242,10 +2250,13 @@ const Reminder = () => {
                         reminder
                       )
                     }
-                    onResume={() =>
-                      handleResumeReminder(
-                        reminder.id
-                      )
+                    onResume={
+                      can("reminders", "edit")
+                        ? () =>
+                            handleResumeReminder(
+                              reminder.id
+                            )
+                        : undefined
                     }
                   />
                 )
@@ -2290,33 +2301,45 @@ const Reminder = () => {
                 false
               )
             }
-            onSendNow={() => {
-              handleSendNow(
-                selectedReminder.id
-              );
+            onSendNow={
+              can("reminders", "edit")
+                ? () => {
+                    handleSendNow(
+                      selectedReminder.id
+                    );
 
-              setShowViewModal(
-                false
-              );
-            }}
-            onStop={() => {
-              handleStopReminder(
-                selectedReminder.id
-              );
+                    setShowViewModal(
+                      false
+                    );
+                  }
+                : undefined
+            }
+            onStop={
+              can("reminders", "edit")
+                ? () => {
+                    handleStopReminder(
+                      selectedReminder.id
+                    );
 
-              setShowViewModal(
-                false
-              );
-            }}
-            onResume={() => {
-              handleResumeReminder(
-                selectedReminder.id
-              );
+                    setShowViewModal(
+                      false
+                    );
+                  }
+                : undefined
+            }
+            onResume={
+              can("reminders", "edit")
+                ? () => {
+                    handleResumeReminder(
+                      selectedReminder.id
+                    );
 
-              setShowViewModal(
-                false
-              );
-            }}
+                    setShowViewModal(
+                      false
+                    );
+                  }
+                : undefined
+            }
           />
         )}
     </div>
@@ -2674,7 +2697,8 @@ const SelectedLoanCard = ({
             </p>
           </div>
 
-          <button
+          {onSend && (
+<button
             type="button"
             onClick={
               onSend
@@ -2702,6 +2726,7 @@ const SelectedLoanCard = ({
 
             Send Reminder
           </button>
+)}
         </div>
       )}
 
@@ -3035,7 +3060,8 @@ const ReminderRow = ({
           View
         </button>
 
-        <button
+        {onStop && (
+<button
           type="button"
           onClick={
             onStop
@@ -3062,6 +3088,7 @@ const ReminderRow = ({
 
           Stop
         </button>
+)}
       </div>
     </div>
   );
@@ -3176,7 +3203,8 @@ const ReminderHistoryRow = ({
           View
         </button>
 
-        <button
+        {onResume && (
+<button
           type="button"
           onClick={
             onResume
@@ -3200,6 +3228,7 @@ const ReminderHistoryRow = ({
 
           Resume
         </button>
+)}
       </div>
     </div>
   );
@@ -4320,7 +4349,8 @@ const ReminderDetailsModal = ({
             </button>
 
             {active ? (
-              <button
+              onStop && (
+<button
                 type="button"
                 onClick={
                   onStop
@@ -4344,8 +4374,10 @@ const ReminderDetailsModal = ({
 
                 Stop Reminder
               </button>
+)
             ) : (
-              <button
+              onResume && (
+<button
                 type="button"
                 onClick={
                   onResume
@@ -4369,6 +4401,7 @@ const ReminderDetailsModal = ({
 
                 Resume Reminder
               </button>
+)
             )}
           </div>
         </div>

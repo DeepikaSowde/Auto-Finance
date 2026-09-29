@@ -2,7 +2,14 @@
 
 import { Router } from "express";
 
-import { createUser, deleteUser, getUsers, login, logout } from "../services/auth.js";
+import {
+  createUser,
+  deleteUser,
+  getUsers,
+  login,
+  logout,
+  updateUser,
+} from "../services/auth.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import { asyncHandler } from "../util/asyncHandler.js";
 
@@ -58,6 +65,21 @@ authRouter.post(
   requireRole("admin"),
   asyncHandler(async (req, res) => {
     res.status(201).json(await createUser(req.body || {}));
+  })
+);
+
+authRouter.put(
+  "/users/:userId",
+  requireAuth,
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const user = await updateUser(req.params.userId, req.body || {}, req.user.userId);
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found." });
+    }
+
+    res.json(user);
   })
 );
 

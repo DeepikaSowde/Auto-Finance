@@ -2,7 +2,7 @@
 //
 // Admin user management — thin client over /api/auth/users.
 
-import { apiDelete, apiGet, apiPost } from "./api";
+import { apiDelete, apiGet, apiPost, apiPut } from "./api";
 
 export const getUsers = async () => {
   try {
@@ -18,4 +18,6 @@ export const getUsers = async () => {
 
 export const createUser = (user) => apiPost("/auth/users", user);
 
-export const deleteUser = (userId) => apiDelete(`/auth/users/${userId}`);
+export const updateUser = (userId, updates) => apiPut(`/auth/users/${userId}`, updates);
+
+export const deleteUser =(userId) => apiDelete(`/auth/users/${userId}`);

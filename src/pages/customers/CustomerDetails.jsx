@@ -48,6 +48,8 @@ import {
   getCustomerLoans,
 } from "../../services/reloanStorage";
 
+import { can } from "../../config/permissions";
+
 import {
   getEmi,
   getLoanOutstanding,
@@ -609,6 +611,7 @@ const handleActivity = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
+{can("customers", "edit") && (
             <HeaderButton
               icon={Pencil}
               label="Edit"
@@ -616,6 +619,7 @@ const handleActivity = () => {
                 handleEdit
               }
             />
+)}
 
             <HeaderButton
               icon={FileText}
@@ -1068,6 +1072,7 @@ const handleActivity = () => {
             {/* QUICK ACTIONS */}
 
             <SidebarCard title="Quick Actions">
+{can("customers", "edit") && (
               <QuickAction
                 icon={Pencil}
                 label="Edit Customer"
@@ -1075,7 +1080,9 @@ const handleActivity = () => {
                   handleEdit
                 }
               />
+)}
 
+{can("customers", "edit") && (
               <QuickAction
                 icon={Upload}
                 label="Upload Document"
@@ -1083,7 +1090,9 @@ const handleActivity = () => {
                   handleDocuments
                 }
               />
+)}
 
+{can("loans", "add") && (
               <QuickAction
                 icon={Plus}
                 label="Add Loan"
@@ -1093,18 +1102,23 @@ const handleActivity = () => {
                   )
                 }
               />
+)}
 
               {!isTerminalLoan && (
                 <>
+{can("collections", "add") && (
                   <QuickAction
                     icon={IndianRupee}
                     label="Receive Payment"
                   />
+)}
 
+{can("reminders", "add") && (
                   <QuickAction
                     icon={Bell}
                     label="Send Reminder"
                   />
+)}
                 </>
               )}
             </SidebarCard>

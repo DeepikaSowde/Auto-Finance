@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Clock3, CheckCircle2, Users, Layers, Plus, Search, X, Download } from "lucide-react";
 
 import { getReferrals, addReferral, markReferralPaid, deleteReferral } from "../../services/referralStorage";
+import { can } from "../../config/permissions";
 import useLoans from "../../hooks/loans/useLoans";
 import { getCustomerName } from "../../utils/loan/loanHelpers";
 import { useToast } from "../../context/ToastContext";
@@ -453,6 +454,7 @@ const ReferralCommissions = () => {
             <Download size={14} /> Export
           </button>
 
+{can("expense", "add") && (
           <button
             type="button"
             onClick={() => setAddOpen(true)}
@@ -460,6 +462,7 @@ const ReferralCommissions = () => {
           >
             <Plus size={14} /> Add Commission
           </button>
+)}
         </div>
 
         {loading ? (
@@ -516,6 +519,7 @@ const ReferralCommissions = () => {
                     <td className="whitespace-nowrap px-4 py-3">
                       <div className="flex items-center gap-2">
                         {item.status === "Pending" ? (
+                          can("expense", "approve") ? (
                           <button
                             type="button"
                             onClick={() => {
@@ -527,10 +531,14 @@ const ReferralCommissions = () => {
                           >
                             Mark as Paid
                           </button>
+                          ) : (
+                            <span className="text-[10px] font-semibold text-amber-600">Pending</span>
+                          )
                         ) : (
                           <span className="text-[10px] text-slate-400">{item.expenseId}</span>
                         )}
 
+{can("expense", "delete") && (
                         <button
                           type="button"
                           onClick={() => handleDelete(item)}
@@ -538,6 +546,7 @@ const ReferralCommissions = () => {
                         >
                           Delete
                         </button>
+)}
                       </div>
                     </td>
                   </tr>

@@ -12,6 +12,7 @@ import {
   findCustomerAndLoan,
   getReLoanRules,
 } from "../../services/reloanStorage";
+import { can } from "../../config/permissions";
 
 const money = (value) =>
   `₹${Number(value || 0).toLocaleString("en-IN", {
@@ -181,7 +182,7 @@ const ReLoanEligibility = () => {
         </section>
 
         <div className="flex flex-wrap justify-end gap-2">
-          {result.eligible ? (
+          {result.eligible && can("reloan", "add") ? (
             <button type="button" onClick={startReLoan} className="rounded-lg bg-[#0B6B43] px-4 py-2.5 text-xs font-extrabold text-white hover:bg-[#095B3B]">Start New Loan</button>
           ) : (
             <button type="button" onClick={() => navigate("/loan")} className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-xs font-extrabold text-slate-600">Back to Loan</button>

@@ -17,8 +17,27 @@ CREATE TABLE IF NOT EXISTS users (
   password_salt  TEXT NOT NULL,
   name           TEXT NOT NULL,
   role           TEXT NOT NULL CHECK (role IN ('admin', 'staff')),
+  -- Staff only: { module: { view, add, edit, delete, approve } }.
+  -- Admins ignore it and always have full access.
+  permissions    JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Databases created before per-user permissions existed: add the column
+-- once, and give existing staff the collection access they already had.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'users' AND column_name = 'permissions'
+  ) THEN
+    ALTER TABLE users ADD COLUMN permissions JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+    UPDATE users
+    SET permissions = '{"collections": {"view": true, "add": true}}'::jsonb
+    WHERE role = 'staff';
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS sessions (
   token       TEXT PRIMARY KEY,

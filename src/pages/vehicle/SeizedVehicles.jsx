@@ -28,6 +28,7 @@ import {
   getLoans,
   getOutstandingAmount,
 } from "../../services/customerStorage";
+import { can } from "../../config/permissions";
 
 import {
   getVehicleSeizures,
@@ -2133,6 +2134,8 @@ const SeizedActions = ({
               }}
             />
 
+            {can("vehicles", "edit") && (
+            <>
             <div className="my-1 border-t border-slate-100" />
 
             {/* RELEASE */}
@@ -2164,6 +2167,8 @@ const SeizedActions = ({
                 });
               }}
             />
+            </>
+            )}
           </div>,
           document.body
         )}
