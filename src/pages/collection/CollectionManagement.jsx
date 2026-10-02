@@ -84,8 +84,7 @@ const CollectionManagement = () => {
     activeTab,
     setActiveTab,
   ] = useState(
-    canRecord &&
-      !canApprove
+    canRecord
       ? "record"
       : "review"
   );
@@ -759,13 +758,9 @@ const CollectionManagement = () => {
               text-slate-400
             "
           >
-            {canRecord && canApprove
-              ? "Record customer payments, then review and approve them"
-              : canApprove
-                ? "Review and approve submitted collections"
-                : canRecord
-                  ? "Record customer payments for admin approval"
-                  : "Submitted collections and their status"}
+            {canRecord
+              ? "Record customer payments and see what has been collected"
+              : "Collected payments and their status"}
           </p>
         </div>
 
@@ -847,13 +842,10 @@ const CollectionManagement = () => {
             }
             icon={ClipboardCheck}
             label={
-              canApprove
-                ? `Review & Approve${
-                    pendingCollections.length
-                      ? ` (${pendingCollections.length})`
-                      : ""
-                  }`
-                : "Submitted Collections"
+              pendingCollections.length >
+                0 && canApprove
+                ? `Collections (${pendingCollections.length} pending)`
+                : "Collections"
             }
             onClick={() =>
               setActiveTab(
@@ -1277,7 +1269,7 @@ const CollectionManagement = () => {
               value={formatMoney(
                 historySummary.totalPenalty
               )}
-              note="Approved penalty component"
+              note="Posted penalty component"
               tone="amber"
             />
           </div>
@@ -1544,7 +1536,7 @@ const CollectionManagement = () => {
                                 text-slate-400
                               "
                             >
-                              Approved
+                              Posted
                             </p>
                           </div>
                         </div>
@@ -1572,6 +1564,8 @@ const CollectionManagement = () => {
           lg:grid-cols-4
         "
       >
+        {pendingCollections.length >
+          0 && (
         <CollectionMetric
           icon={
             Clock3
@@ -1585,12 +1579,13 @@ const CollectionManagement = () => {
           }
           tone="amber"
         />
+        )}
 
         <CollectionMetric
           icon={
             CheckCircle2
           }
-          label="Approved"
+          label="Posted"
           count={
             approvedCollections.length
           }
@@ -1600,6 +1595,8 @@ const CollectionManagement = () => {
           tone="green"
         />
 
+        {rejectedCollections.length >
+          0 && (
         <CollectionMetric
           icon={
             XCircle
@@ -1613,6 +1610,7 @@ const CollectionManagement = () => {
           }
           tone="red"
         />
+        )}
 
         <CollectionMetric
           icon={
@@ -1731,17 +1729,23 @@ const CollectionManagement = () => {
               All
             </option>
 
+            {pendingCollections.length >
+              0 && (
             <option>
               Pending
             </option>
+            )}
 
-            <option>
-              Approved
+            <option value="Approved">
+              Posted
             </option>
 
+            {rejectedCollections.length >
+              0 && (
             <option>
               Rejected
             </option>
+            )}
 
             <option>
               Reversed
@@ -1812,7 +1816,7 @@ const CollectionManagement = () => {
               text-[#0B5D3B]
             "
           >
-            Approved ₹
+            Posted ₹
             {money(
               approvedAmount
             )}
@@ -2925,7 +2929,7 @@ const CollectionDetailsModal = ({
               />
 
               <Info
-                label="Approved"
+                label="Posted"
                 value={formatDateTime(
                   collection?.approvedAt
                 )}
@@ -3359,7 +3363,7 @@ const CollectionDetailsModal = ({
                 text-amber-700
               "
             >
-              Waiting for approval.
+              Submitted before payments posted automatically; still waiting for approval.
             </p>
           )}
 
@@ -4273,8 +4277,11 @@ const CollectionStatus = ({
           />
         )}
 
-      {status ||
-        "Unknown"}
+      {normalized ===
+      "approved"
+        ? "Posted"
+        : status ||
+          "Unknown"}
     </span>
   );
 };
@@ -4389,9 +4396,8 @@ const EmptyCollections = () => {
           text-slate-400
         "
       >
-        Staff-submitted
-        collections will appear
-        here.
+        Recorded collections
+        will appear here.
       </p>
     </div>
   );

@@ -1,10 +1,11 @@
 // src/services/collectionStorage.js
 
-// Collections are stored and approved server-side. Approval runs the
+// Collections are stored and posted server-side. Recording one runs the
 // payment-allocation waterfall against the loan's installments inside a
 // database transaction (see backend/src/services/collectionRepository.js),
 // so this module is a thin client plus the reporting/aggregation helpers
-// the collection pages render.
+// the collection pages render. There is no approval step: a recorded
+// collection is already posted (status "Approved", shown as "Posted").
 
 import { apiGet, apiPost, notifyDataUpdated } from "./api";
 
@@ -250,8 +251,10 @@ const endOfDay = (
 /* =========================================================
    CREATE COLLECTION
 
-   The server validates the loan, stores the submission as
-   Pending and assigns the collection id.
+   The server validates the loan, posts the payment to the
+   loan's installments and assigns the collection id. Send a
+   clientRef (one per payment attempt) so a repeated request
+   returns the first collection instead of posting twice.
 ========================================================= */
 
 export const addCollection = async (collection = {}) => {
@@ -279,11 +282,12 @@ export const getCollectionById = async (collectionId) => {
 /* =========================================================
    APPROVE
 
-   Approval is the only action that moves money. The server
-   runs the allocation waterfall (penalty -> interest ->
-   principal -> advance/excess), posts it against the loan's
-   installments and records the payment history in a single
-   transaction, so a collection can never post twice.
+   Only for collections still Pending from before payments
+   posted automatically. The server runs the allocation
+   waterfall (penalty -> interest -> principal ->
+   advance/excess), posts it against the loan's installments
+   and records the payment history in a single transaction,
+   so a collection can never post twice.
 ========================================================= */
 
 export const approveCollection = async (collectionId) => {

@@ -62,7 +62,6 @@ const DEFAULT_SETTINGS = {
     latePaymentCharge: "250",
     allowPartialPayment: true,
     allowAdvancePayment: true,
-    adminApprovalRequired: true,
   },
 
   vehicle: {
@@ -97,7 +96,6 @@ const DEFAULT_SETTINGS = {
     allowPartialPayment: true,
     allowAdvancePayment: true,
     allowExcessPayment: true,
-    adminApprovalRequired: true,
     autoPosting: true,
     allocationPriority:
       "Overdue → Current Due → Future Due",
@@ -1424,20 +1422,6 @@ const LoanSection = ({
             )
           }
         />
-
-        <SettingToggle
-          label="Admin Approval Required"
-          description="Require approval before a submitted payment is posted."
-          value={
-            values.adminApprovalRequired
-          }
-          onChange={(value) =>
-            update(
-              "adminApprovalRequired",
-              value
-            )
-          }
-        />
       </div>
     </SettingsGroup>
   );
@@ -1804,19 +1788,6 @@ const RepaymentSection = ({
           onChange={(value) =>
             update(
               "allowExcessPayment",
-              value
-            )
-          }
-        />
-
-        <SettingToggle
-          label="Admin Approval Required"
-          value={
-            values.adminApprovalRequired
-          }
-          onChange={(value) =>
-            update(
-              "adminApprovalRequired",
               value
             )
           }

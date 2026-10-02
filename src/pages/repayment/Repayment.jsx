@@ -20,6 +20,7 @@ import {
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -49,6 +50,16 @@ import {
 /* =========================================================
    MAIN
 ========================================================= */
+
+/*
+ * One reference per payment attempt: a repeated request (double tap, or a
+ * retry after a lost response) returns the first collection instead of
+ * posting the payment again.
+ */
+const newClientRef = () =>
+  typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 const Repayment = () => {
   const navigate = useNavigate();
@@ -103,6 +114,23 @@ const Repayment = () => {
     error,
     setError,
   ] = useState("");
+
+  const [
+    submitting,
+    setSubmitting,
+  ] = useState(false);
+
+  const submittingRef =
+    useRef(false);
+
+  const clientRefRef =
+    useRef("");
+
+  // A different loan is a different payment: start a fresh reference.
+  useEffect(() => {
+    clientRefRef.current =
+      "";
+  }, [selectedLoan]);
 
   const [
     showSearchResults,
@@ -489,7 +517,7 @@ const Repayment = () => {
      SUBMIT
   ======================================================= */
 
-  const handleSubmit = async (event) => {
+  const submitRepayment = async (event) => {
     event.preventDefault();
 
     setMessage("");
@@ -684,7 +712,7 @@ const Repayment = () => {
 
       if (sameSchedule) {
         setError(
-          "A collection for this repayment is already waiting for Admin approval."
+          "A collection for this repayment is still pending approval."
         );
 
         return;
@@ -700,14 +728,14 @@ const Repayment = () => {
     /*
      * Build audit-safe collection.
      *
-     * IMPORTANT:
-     * This creates Pending only.
-     *
-     * It does NOT change the loan.
-     *
-     * Loan/schedule/dashboard updates happen
-     * after Admin approval.
+     * The server posts it to the loan straight away
+     * (no approval step), so clientRef makes a repeated
+     * request return the first collection instead of
+     * posting the payment a second time.
      */
+    clientRefRef.current ||=
+      newClientRef();
+
     let newCollection;
 
     try {
@@ -913,8 +941,8 @@ const Repayment = () => {
             session?.userId ||
             "",
 
-          status:
-            "Pending",
+          clientRef:
+            clientRefRef.current,
         });
     } catch (submitError) {
       console.error(
@@ -930,8 +958,11 @@ const Repayment = () => {
       return;
     }
 
+    clientRefRef.current =
+      "";
+
     setMessage(
-      `Repayment ${newCollection?.id || ""} submitted for Admin approval.`
+      `Repayment ${newCollection?.id || ""} recorded and applied to the loan.`
     );
 
     setCollections(
@@ -956,6 +987,30 @@ const Repayment = () => {
     setShowSearchResults(
       false
     );
+  };
+
+  /*
+   * The payment posts as soon as it is recorded, so a second tap while the
+   * first is in flight must do nothing.
+   */
+  const handleSubmit = async (event) => {
+    if (submittingRef.current) {
+      event?.preventDefault?.();
+
+      return;
+    }
+
+    submittingRef.current = true;
+
+    setSubmitting(true);
+
+    try {
+      await submitRepayment(event);
+    } finally {
+      submittingRef.current = false;
+
+      setSubmitting(false);
+    }
   };
 
   /* =======================================================
@@ -1032,8 +1087,8 @@ const Repayment = () => {
                   text-slate-400
                 "
               >
-                Record customer repayments and
-                submit them for Admin approval
+                Record customer repayments
+                and post them to the loan
               </p>
             </div>
           </div>
@@ -1752,8 +1807,8 @@ const Repayment = () => {
                       text-slate-400
                     "
                   >
-                    Payment is sent to Admin
-                    for approval
+                    Payment is posted to the
+                    loan immediately
                   </p>
                 </div>
               </div>
@@ -2089,6 +2144,9 @@ const Repayment = () => {
 
                 <button
                   type="submit"
+                  disabled={
+                    submitting
+                  }
                   className="
                     inline-flex
                     h-9
@@ -2097,6 +2155,8 @@ const Repayment = () => {
                     rounded-lg
                     bg-[#0B6B43]
                     px-4
+                    disabled:cursor-not-allowed
+                    disabled:opacity-50
                     text-[9px]
                     font-extrabold
                     text-white
@@ -2110,7 +2170,9 @@ const Repayment = () => {
                     size={12}
                   />
 
-                  Submit Repayment
+                  {submitting
+                    ? "Recording..."
+                    : "Record Repayment"}
                 </button>
               </div>
             </form>
@@ -2561,8 +2623,8 @@ const AllocationPreview = ({
                 text-slate-400
               "
             >
-              Payment will be allocated
-              automatically after approval
+              Payment is allocated
+              automatically when recorded
             </p>
           </div>
         </div>

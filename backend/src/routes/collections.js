@@ -38,7 +38,9 @@ collectionsRouter.get(
   })
 );
 
-// Recording a payment; it stays Pending until someone with approve access reviews it.
+// Recording a payment posts it to the loan immediately (no approval step).
+// approve / reject only apply to collections left Pending from before that;
+// reverse (collections.approve) undoes a posted payment.
 collectionsRouter.post(
   "/",
   requirePermission("collections.add"),

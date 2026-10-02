@@ -7,6 +7,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -48,6 +49,16 @@ import {
   getSchedulePaidAmount,
   getScheduleRemainingAmount,
 } from "../../services/repaymentStorage";
+
+/*
+ * One reference per payment attempt. If the same request is sent twice (a
+ * double tap, or a retry after a lost response) the server returns the first
+ * collection instead of posting the payment a second time.
+ */
+const newClientRef = () =>
+  typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 /* =========================================================
    DATE HELPERS
@@ -513,6 +524,17 @@ const RecordCollection = () => {
     error,
     setError,
   ] = useState("");
+
+  const [
+    submitting,
+    setSubmitting,
+  ] = useState(false);
+
+  const submittingRef =
+    useRef(false);
+
+  const clientRefRef =
+    useRef("");
 
   /* =======================================================
      SYNC
@@ -2178,6 +2200,9 @@ const RecordCollection = () => {
           loan
         );
 
+      clientRefRef.current =
+        newClientRef();
+
       setSelectedPayment({
         ...item,
         mode:
@@ -2256,6 +2281,9 @@ const RecordCollection = () => {
           );
       }
 
+      clientRefRef.current =
+        newClientRef();
+
       setSelectedPayment({
         loan,
         mode:
@@ -2303,6 +2331,9 @@ const RecordCollection = () => {
 
   const closeCollection =
     () => {
+      clientRefRef.current =
+        "";
+
       setSelectedPayment(
         null
       );
@@ -2450,7 +2481,7 @@ const RecordCollection = () => {
      SUBMIT
   ====================================================== */
 
-  const handleSubmit =
+  const submitPayment =
     async (
       event
     ) => {
@@ -2909,8 +2940,9 @@ const RecordCollection = () => {
               location.trim(),
             remarks:
               remarks.trim(),
-            status:
-              "Pending",
+            clientRef:
+              clientRefRef.current ||
+              newClientRef(),
           });
       } catch (
         submitError
@@ -2929,10 +2961,16 @@ const RecordCollection = () => {
       }
 
       setMessage(
-        `Collection ${
+        `Payment of ${formatMoney(
+          numericAmount
+        )} recorded and applied to ${
+          getLoanNumber(
+            latestLoan
+          )
+        } (${
           newCollection?.id ||
-          ""
-        } submitted successfully and is waiting for Admin approval.`
+          "collection"
+        }).`
       );
 
       setCollections(
@@ -2942,6 +2980,9 @@ const RecordCollection = () => {
       setLoans(
         await safeGetLoans()
       );
+
+      clientRefRef.current =
+        "";
 
       setSelectedPayment(
         null
@@ -2953,6 +2994,39 @@ const RecordCollection = () => {
       );
       setLocation("");
       setRemarks("");
+    };
+
+  /*
+   * The payment posts to the loan as soon as it is recorded, so a second
+   * tap while the first is still in flight must do nothing.
+   */
+  const handleSubmit =
+    async (
+      event
+    ) => {
+      if (
+        submittingRef.current
+      ) {
+        event?.preventDefault?.();
+
+        return;
+      }
+
+      submittingRef.current =
+        true;
+
+      setSubmitting(true);
+
+      try {
+        await submitPayment(
+          event
+        );
+      } finally {
+        submittingRef.current =
+          false;
+
+        setSubmitting(false);
+      }
     };
 
   /* =======================================================
@@ -3008,7 +3082,7 @@ const RecordCollection = () => {
                   text-[#0B6B43]
                 "
               >
-                Collection Submitted
+                Payment Recorded
               </p>
 
               <p
@@ -3763,6 +3837,9 @@ const RecordCollection = () => {
           onSubmit={
             handleSubmit
           }
+          submitting={
+            submitting
+          }
           getLoanPaymentPreview={
             getLoanPaymentPreview
           }
@@ -4389,6 +4466,7 @@ const CollectionModal = ({
   setRemarks,
   onClose,
   onSubmit,
+  submitting,
   getLoanPaymentPreview,
   getMaximumCollectibleAmount,
   getPaymentSatisfaction,
@@ -5597,12 +5675,12 @@ const CollectionModal = ({
                 py-3
               "
             >
-              <Clock3
+              <CheckCircle2
                 size={14}
                 className="
                   mt-0.5
                   shrink-0
-                  text-slate-400
+                  text-[#0B6B43]
                 "
               />
 
@@ -5614,7 +5692,7 @@ const CollectionModal = ({
                     text-slate-600
                   "
                 >
-                  Admin approval required
+                  Posted immediately
                 </p>
 
                 <p
@@ -5626,9 +5704,9 @@ const CollectionModal = ({
                     text-slate-400
                   "
                 >
-                  This repayment will be submitted to Admin for approval.
-                  Loan balance, EMI status and dashboard totals update
-                  only after approval.
+                  This payment is applied to the loan as soon as you record
+                  it. Loan balance, EMI status and dashboard totals update
+                  straight away.
                 </p>
               </div>
             </div>
@@ -5673,6 +5751,7 @@ const CollectionModal = ({
               <button
                 type="submit"
                 disabled={
+                  submitting ||
                   satisfaction?.status ===
                     "excess" ||
                   !amount ||
@@ -5705,7 +5784,9 @@ const CollectionModal = ({
                 `}
               >
                 <CheckCircle2 size={13} />
-                Submit for Approval
+                {submitting
+                  ? "Recording..."
+                  : "Record Payment"}
               </button>
             </div>
           </form>

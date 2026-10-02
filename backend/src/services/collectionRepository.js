@@ -1,9 +1,13 @@
 // src/services/collectionRepository.js
 //
-// Collections are payment submissions that go through
-// Pending -> Approved | Rejected | Reversed. Approval is the only thing that
-// moves money: it runs the allocation waterfall and posts the result against
-// the loan's installments inside a single transaction.
+// A collection is a payment recorded against a loan. Recording one runs the
+// allocation waterfall and posts the result against the loan's installments
+// immediately, inside a single transaction (status Approved) — there is no
+// review step. A posted collection can later be Reversed.
+//
+// Pending / Rejected only exist for collections submitted before posting
+// became automatic: approveCollection / rejectCollection remain so those can
+// still be cleared, and no new collection is ever left Pending.
 
 import { query, withTransaction } from "../db/connection.js";
 import { buildLoan, getCustomerRow } from "./customerRepository.js";
@@ -125,6 +129,26 @@ export const getCollectionById = async (collectionId) => {
 };
 
 export const createCollection = async (payload = {}, submittedBy) => {
+  // A repeated request (double tap, or a retry after a lost response) carries
+  // the same clientRef and must not post a second time.
+  const clientRef = String(payload.clientRef || "").trim().slice(0, 120) || null;
+
+  const findByClientRef = async () => {
+    if (!clientRef) {
+      return null;
+    }
+
+    const existing = await query("SELECT id FROM collections WHERE client_ref = $1", [clientRef]);
+
+    return existing.rows[0] ? getCollectionById(existing.rows[0].id) : null;
+  };
+
+  const duplicate = await findByClientRef();
+
+  if (duplicate) {
+    return duplicate;
+  }
+
   const [customerRow, loanResult] = await Promise.all([
     payload.customerId ? getCustomerRow(payload.customerId) : Promise.resolve(null),
     payload.loanId
@@ -144,42 +168,63 @@ export const createCollection = async (payload = {}, submittedBy) => {
     throw new CollectionError("Collection amount must be greater than zero.");
   }
 
-  const collectionId = await withTransaction(async (client) => {
-    const result = await client.query(
-      `INSERT INTO collections
-        (id, customer_pk, loan_pk, status, amount, due_amount, penalty_amount, total_payable,
-         payment_type, pay_mode, receipt_number, due_date, installment_number,
-         staff_name, location, remarks, overdue_days, grace_days, collected_date)
-       VALUES ('', $1, $2, 'Pending', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-       RETURNING pk`,
-      [
-        customerRow?.pk ?? loanRow.customer_pk,
-        loanRow.pk,
-        amount,
-        roundMoney(payload.dueAmount || 0),
-        roundMoney(payload.penaltyAmount || 0),
-        roundMoney(payload.totalPayable || payload.dueAmount || 0),
-        payload.paymentType || "",
-        payload.payMode || payload.paymentMode || "",
-        payload.receiptNumber || payload.receiptNo || "",
-        payload.dueDate || "",
-        payload.installment ?? payload.installmentNumber ?? null,
-        payload.staffName || submittedBy?.name || "",
-        payload.location || "",
-        payload.remarks || "",
-        Number(payload.overdueDays) || 0,
-        Number(payload.graceDays) || 0,
-        payload.collectedDate || new Date().toISOString(),
-      ]
-    );
+  let collectionId;
 
-    const pk = result.rows[0].pk;
-    const id = `COL-${pad(pk)}`;
+  try {
+    collectionId = await withTransaction(async (client) => {
+      const result = await client.query(
+        `INSERT INTO collections
+          (id, customer_pk, loan_pk, status, amount, due_amount, penalty_amount, total_payable,
+           payment_type, pay_mode, receipt_number, due_date, installment_number,
+           staff_name, location, remarks, overdue_days, grace_days, collected_date, client_ref)
+         VALUES ('', $1, $2, 'Pending', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+         RETURNING pk`,
+        [
+          customerRow?.pk ?? loanRow.customer_pk,
+          loanRow.pk,
+          amount,
+          roundMoney(payload.dueAmount || 0),
+          roundMoney(payload.penaltyAmount || 0),
+          roundMoney(payload.totalPayable || payload.dueAmount || 0),
+          payload.paymentType || "",
+          payload.payMode || payload.paymentMode || "",
+          payload.receiptNumber || payload.receiptNo || "",
+          payload.dueDate || "",
+          payload.installment ?? payload.installmentNumber ?? null,
+          payload.staffName || submittedBy?.name || "",
+          payload.location || "",
+          payload.remarks || "",
+          Number(payload.overdueDays) || 0,
+          Number(payload.graceDays) || 0,
+          payload.collectedDate || new Date().toISOString(),
+          clientRef,
+        ]
+      );
 
-    await client.query("UPDATE collections SET id = $1 WHERE pk = $2", [id, pk]);
+      const pk = result.rows[0].pk;
+      const id = `COL-${pad(pk)}`;
 
-    return id;
-  });
+      await client.query("UPDATE collections SET id = $1 WHERE pk = $2", [id, pk]);
+
+      // Post it in the same transaction: if posting fails, nothing is saved.
+      const locked = await client.query("SELECT * FROM collections WHERE pk = $1 FOR UPDATE", [pk]);
+
+      await postCollection(client, locked.rows[0], submittedBy, { allowExcess: false });
+
+      return id;
+    });
+  } catch (error) {
+    // Two identical requests raced and the other one won; return its collection.
+    if (error.code === "23505" && clientRef) {
+      const winner = await findByClientRef();
+
+      if (winner) {
+        return winner;
+      }
+    }
+
+    throw error;
+  }
 
   return getCollectionById(collectionId);
 };
@@ -189,9 +234,156 @@ const CLOSED_LOAN_STATUSES = new Set(["closed", "paid", "settled", "completed", 
 /*
  * The one path that actually moves money.
  *
- * The collection and its loan are locked with SELECT ... FOR UPDATE for the
- * whole transaction, so two admins approving at the same moment cannot both
- * read the same installment balances and double-post.
+ * Expects the collection row to be locked (SELECT ... FOR UPDATE) by the
+ * caller's transaction. The loan is locked here for the same transaction, so
+ * two payments landing on one loan at the same moment cannot both read the
+ * same installment balances and double-post.
+ */
+const postCollection = async (client, collectionRow, postedBy, { allowExcess }) => {
+  // Idempotency guard: a collection may never post twice.
+  const posted = await client.query(
+    "SELECT COUNT(*)::int AS count FROM payment_allocations WHERE collection_pk = $1",
+    [collectionRow.pk]
+  );
+
+  if (posted.rows[0].count > 0) {
+    throw new CollectionError("This collection has already been processed.", 409);
+  }
+
+  const loanResult = await client.query("SELECT * FROM loans WHERE pk = $1 FOR UPDATE", [
+    collectionRow.loan_pk,
+  ]);
+
+  const loanRow = loanResult.rows[0];
+
+  if (!loanRow) {
+    throw new CollectionError("The loan for this collection no longer exists.", 404);
+  }
+
+  if (CLOSED_LOAN_STATUSES.has(String(loanRow.status || "").toLowerCase())) {
+    throw new CollectionError(
+      `Loan is ${loanRow.status}; it cannot take further payments.`,
+      409
+    );
+  }
+
+  const referenceDate = new Date();
+
+  const installmentResult = await client.query(
+    "SELECT * FROM installments WHERE loan_pk = $1 ORDER BY installment_number ASC",
+    [loanRow.pk]
+  );
+
+  const installments = installmentResult.rows.map((row) =>
+    describeInstallment(row, referenceDate)
+  );
+
+  const allocation = buildAllocation({
+    installments,
+    paymentAmount: collectionRow.amount,
+    penaltyAmount: collectionRow.penalty_amount,
+    referenceDate,
+  });
+
+  // Nobody reviews a collection before it posts, so an amount larger than the
+  // loan owes (a mistyped figure) is refused rather than recorded as excess.
+  if (!allowExcess && roundMoney(allocation.excess) > 0.009) {
+    throw new CollectionError(
+      `That is ${roundMoney(allocation.excess)} more than is owed on this loan. Check the amount.`,
+      400
+    );
+  }
+
+  const updated = applyAllocation({ installments, items: allocation.items, referenceDate });
+  const outstanding = summariseOutstanding(updated);
+  const loanStatus = deriveLoanStatus(updated, referenceDate);
+  const paymentType = derivePaymentType(allocation, installments, referenceDate);
+
+  for (const installment of updated) {
+    await client.query(
+      `UPDATE installments SET
+        paid_principal = $3, paid_interest = $4, penalty_paid_amount = $5, status = $6
+       WHERE loan_pk = $1 AND installment_number = $2`,
+      [
+        loanRow.pk,
+        installment.installmentNumber,
+        installment.paidPrincipal,
+        installment.paidInterest,
+        installment.penaltyPaidAmount,
+        installment.status,
+      ]
+    );
+  }
+
+  for (const [index, item] of allocation.items.entries()) {
+    await client.query(
+      `INSERT INTO payment_allocations
+        (id, loan_pk, collection_pk, installment_number, due_date, amount, type,
+         is_penalty, is_interest, is_principal)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        `PAY-${collectionRow.id}-${index + 1}`,
+        loanRow.pk,
+        collectionRow.pk,
+        item.installmentNumber,
+        item.dueDate || "",
+        item.amount,
+        item.type,
+        Boolean(item.isPenalty),
+        Boolean(item.isInterest),
+        Boolean(item.isPrincipal),
+      ]
+    );
+  }
+
+  await client.query(
+    "UPDATE loans SET status = $2, repayment_meta = $3, updated_at = now() WHERE pk = $1",
+    [
+      loanRow.pk,
+      loanStatus,
+      JSON.stringify({
+        repaymentMeta: {
+          lastPaymentAt: referenceDate.toISOString(),
+          lastPaymentAmount: collectionRow.amount,
+          lastPaymentType: paymentType,
+          lastPenaltyPaid: allocation.penalty,
+          lastInterestPaid: allocation.interest,
+          lastPrincipalPaid: allocation.principal,
+          outstanding: outstanding.outstanding,
+          principalOutstanding: outstanding.principalOutstanding,
+          interestOutstanding: outstanding.interestOutstanding,
+        },
+      }),
+    ]
+  );
+
+  await client.query(
+    `UPDATE collections SET
+      status = 'Approved', approved_at = now(), approved_by = $2, payment_type = $3,
+      amount_toward_due = $4, amount_toward_penalty = $5, amount_toward_principal = $6,
+      amount_toward_advance = $7, amount_excess = $8, allocation = $9,
+      repayment_processed = true, repayment_processed_at = now(),
+      repayment_processing_status = 'Processed', repayment_error = NULL, updated_at = now()
+     WHERE pk = $1`,
+    [
+      collectionRow.pk,
+      postedBy?.username || "",
+      paymentType,
+      roundMoney(allocation.interest + allocation.principal - allocation.advance),
+      allocation.penalty,
+      allocation.principal,
+      allocation.advance,
+      allocation.excess,
+      JSON.stringify(allocation),
+    ]
+  );
+
+  return { loanPk: loanRow.pk, allocation };
+};
+
+/*
+ * Posts a collection that is still Pending (one submitted before posting
+ * became automatic).
  */
 export const approveCollection = async (collectionId, approvedBy) => {
   const outcome = await withTransaction(async (client) => {
@@ -213,136 +405,7 @@ export const approveCollection = async (collectionId, approvedBy) => {
       );
     }
 
-    // Idempotency guard: a collection may never post twice.
-    const posted = await client.query(
-      "SELECT COUNT(*)::int AS count FROM payment_allocations WHERE collection_pk = $1",
-      [collectionRow.pk]
-    );
-
-    if (posted.rows[0].count > 0) {
-      throw new CollectionError("This collection has already been processed.", 409);
-    }
-
-    const loanResult = await client.query("SELECT * FROM loans WHERE pk = $1 FOR UPDATE", [
-      collectionRow.loan_pk,
-    ]);
-
-    const loanRow = loanResult.rows[0];
-
-    if (!loanRow) {
-      throw new CollectionError("The loan for this collection no longer exists.", 404);
-    }
-
-    if (CLOSED_LOAN_STATUSES.has(String(loanRow.status || "").toLowerCase())) {
-      throw new CollectionError(
-        `Loan is ${loanRow.status}; it cannot take further payments.`,
-        409
-      );
-    }
-
-    const referenceDate = new Date();
-
-    const installmentResult = await client.query(
-      "SELECT * FROM installments WHERE loan_pk = $1 ORDER BY installment_number ASC",
-      [loanRow.pk]
-    );
-
-    const installments = installmentResult.rows.map((row) =>
-      describeInstallment(row, referenceDate)
-    );
-
-    const allocation = buildAllocation({
-      installments,
-      paymentAmount: collectionRow.amount,
-      penaltyAmount: collectionRow.penalty_amount,
-      referenceDate,
-    });
-
-    const updated = applyAllocation({ installments, items: allocation.items, referenceDate });
-    const outstanding = summariseOutstanding(updated);
-    const loanStatus = deriveLoanStatus(updated, referenceDate);
-    const paymentType = derivePaymentType(allocation, installments, referenceDate);
-
-    for (const installment of updated) {
-      await client.query(
-        `UPDATE installments SET
-          paid_principal = $3, paid_interest = $4, penalty_paid_amount = $5, status = $6
-         WHERE loan_pk = $1 AND installment_number = $2`,
-        [
-          loanRow.pk,
-          installment.installmentNumber,
-          installment.paidPrincipal,
-          installment.paidInterest,
-          installment.penaltyPaidAmount,
-          installment.status,
-        ]
-      );
-    }
-
-    for (const [index, item] of allocation.items.entries()) {
-      await client.query(
-        `INSERT INTO payment_allocations
-          (id, loan_pk, collection_pk, installment_number, due_date, amount, type,
-           is_penalty, is_interest, is_principal)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [
-          `PAY-${collectionRow.id}-${index + 1}`,
-          loanRow.pk,
-          collectionRow.pk,
-          item.installmentNumber,
-          item.dueDate || "",
-          item.amount,
-          item.type,
-          Boolean(item.isPenalty),
-          Boolean(item.isInterest),
-          Boolean(item.isPrincipal),
-        ]
-      );
-    }
-
-    await client.query(
-      "UPDATE loans SET status = $2, repayment_meta = $3, updated_at = now() WHERE pk = $1",
-      [
-        loanRow.pk,
-        loanStatus,
-        JSON.stringify({
-          repaymentMeta: {
-            lastPaymentAt: referenceDate.toISOString(),
-            lastPaymentAmount: collectionRow.amount,
-            lastPaymentType: paymentType,
-            lastPenaltyPaid: allocation.penalty,
-            lastInterestPaid: allocation.interest,
-            lastPrincipalPaid: allocation.principal,
-            outstanding: outstanding.outstanding,
-            principalOutstanding: outstanding.principalOutstanding,
-            interestOutstanding: outstanding.interestOutstanding,
-          },
-        }),
-      ]
-    );
-
-    await client.query(
-      `UPDATE collections SET
-        status = 'Approved', approved_at = now(), approved_by = $2, payment_type = $3,
-        amount_toward_due = $4, amount_toward_penalty = $5, amount_toward_principal = $6,
-        amount_toward_advance = $7, amount_excess = $8, allocation = $9,
-        repayment_processed = true, repayment_processed_at = now(),
-        repayment_processing_status = 'Processed', repayment_error = NULL, updated_at = now()
-       WHERE pk = $1`,
-      [
-        collectionRow.pk,
-        approvedBy?.username || "",
-        paymentType,
-        roundMoney(allocation.interest + allocation.principal - allocation.advance),
-        allocation.penalty,
-        allocation.principal,
-        allocation.advance,
-        allocation.excess,
-        JSON.stringify(allocation),
-      ]
-    );
-
-    return { loanPk: loanRow.pk, allocation };
+    return postCollection(client, collectionRow, approvedBy, { allowExcess: true });
   });
 
   const loanResult = await query("SELECT * FROM loans WHERE pk = $1", [outcome.loanPk]);

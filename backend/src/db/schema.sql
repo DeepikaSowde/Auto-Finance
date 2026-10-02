@@ -251,6 +251,10 @@ CREATE TABLE IF NOT EXISTS collections (
   repayment_processing_status  TEXT NOT NULL DEFAULT 'Pending',
   repayment_error              TEXT,
 
+  -- Caller-generated reference for this submission. A repeated request with the
+  -- same value returns the original collection instead of posting it twice.
+  client_ref                   TEXT,
+
   submitted_at                 TIMESTAMPTZ NOT NULL DEFAULT now(),
   collected_date               TEXT,
   approved_at                  TIMESTAMPTZ,
@@ -265,6 +269,12 @@ CREATE TABLE IF NOT EXISTS collections (
   created_at                   TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at                   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Databases created before client_ref existed.
+ALTER TABLE collections ADD COLUMN IF NOT EXISTS client_ref TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_collections_client_ref
+  ON collections (client_ref) WHERE client_ref IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_collections_loan_pk ON collections (loan_pk);
 CREATE INDEX IF NOT EXISTS idx_collections_customer_pk ON collections (customer_pk);

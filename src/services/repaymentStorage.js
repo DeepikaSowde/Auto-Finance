@@ -3,7 +3,7 @@
 // Repayment maths, schedule derivations and payment previews. These are
 // pure functions over loan data that has already been fetched.
 //
-// Applying a payment is NOT done here any more: collection approval runs
+// Applying a payment is NOT done here any more: recording a collection runs
 // the allocation waterfall server-side inside a transaction
 // (backend/src/services/repaymentEngine.js), so there is a single place
 // where money moves.

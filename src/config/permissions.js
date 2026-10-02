@@ -34,7 +34,7 @@ export const PERMISSION_MODULES = [
     key: "collections",
     label: "Collections",
     actions: ["view", "add", "approve"],
-    hint: "Add = record payment · Approve = approve / reject / reverse",
+    hint: "Add = record payment (posts immediately) · Approve = reverse a payment / clear older pending ones",
   },
   {
     key: "vehicles",
