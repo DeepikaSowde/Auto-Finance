@@ -153,7 +153,7 @@ const ReLoan = () => {
       return;
     }
 
-    const calculated = checkReLoanEligibility({
+    const calculated = await checkReLoanEligibility({
       customer: selectedRecord.customer,
       loan: selectedRecord.loan,
       vehicle: selectedRecord.vehicle,

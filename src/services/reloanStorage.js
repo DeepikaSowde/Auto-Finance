@@ -185,7 +185,7 @@ const getPaidInstallmentCount = (loan) =>
 
 export const getRepaymentHistoryEligibility = (
   loan,
-  rules = getReLoanRules()
+  rules = DEFAULT_RELOAN_RULES
 ) => {
   const schedule = Array.isArray(
     loan?.repaymentSchedule
@@ -294,8 +294,9 @@ export const getCustomerReLoans = async (customerId) => {
   );
 };
 
-export const hasActiveReLoan = (customerId) =>
-  getCustomerReLoans(customerId).some((loan) => {
+// Async: the customer's loans come from the API.
+export const hasActiveReLoan = async (customerId) =>
+  (await getCustomerReLoans(customerId)).some((loan) => {
     const status = getLoanStatus(loan);
     return ["active", "pending", "due", "overdue", "partially_paid"].includes(
       status
@@ -397,17 +398,23 @@ export const calculateReLoanFinancialSummary = (loan) => {
   };
 };
 
-export const checkReLoanEligibility = ({
+/*
+ * Async because the "existing active re-loan" check reads the customer's
+ * loans from the API; every caller must await it. Pass rules from
+ * getReLoanRules(); missing keys fall back to the defaults.
+ */
+export const checkReLoanEligibility = async ({
   customer,
   loan,
   vehicle,
-  rules = getReLoanRules(),
+  rules = {},
 } = {}) => {
-  const activeRules = { ...getReLoanRules(), ...rules };
+  const activeRules = { ...DEFAULT_RELOAN_RULES, ...rules };
   const metrics = getOverdueMetrics(loan);
   const vehicleRecord = getLoanVehicle(loan, vehicle);
   const vehicleStatus = getVehicleStatus(vehicleRecord);
   const customerId = customer?.customer?.id || loan?.customerId || "";
+  const activeReLoanExists = customerId ? await hasActiveReLoan(customerId) : false;
   const previousLoanStatus =
     getPreviousLoanStatusEvaluation(
       loan,
@@ -483,10 +490,10 @@ export const checkReLoanEligibility = ({
     {
       id: "existingReLoan",
       label: "Existing Active Re-loan",
-      status: hasActiveReLoan(customerId) ? "fail" : "pass",
-      currentValue: hasActiveReLoan(customerId) ? "Active re-loan exists" : "None",
+      status: activeReLoanExists ? "fail" : "pass",
+      currentValue: activeReLoanExists ? "Active re-loan exists" : "None",
       requiredValue: "None",
-      message: hasActiveReLoan(customerId) ? "Customer already has an active re-loan" : "No active re-loan",
+      message: activeReLoanExists ? "Customer already has an active re-loan" : "No active re-loan",
     },
     checkCustomerVerification(customer, activeRules),
     checkDocuments(customer, activeRules),
@@ -553,7 +560,11 @@ export const findCustomerAndLoan = async (loanId) => {
       return {
         customer,
         loan,
-        vehicle: getVehicleById(loan?.vehicleId) || customer?.vehicle || loan?.vehicle || {},
+        vehicle:
+          (loan?.vehicleId ? await getVehicleById(loan.vehicleId) : null) ||
+          customer?.vehicle ||
+          loan?.vehicle ||
+          {},
       };
     }
   }

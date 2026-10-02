@@ -621,7 +621,7 @@ const updateVehicleData = useCallback(
 
       if (reLoanParams.isReLoan) {
         const eligibility =
-          checkReLoanEligibility({
+          await checkReLoanEligibility({
             customer: await getCustomerById(
               reLoanParams.customerId
             ),

@@ -14,13 +14,15 @@ const ReLoanEligibilityModal = ({ loan, customer, vehicle, onClose, onViewResult
   useEffect(() => {
     let cancelled = false;
 
-    getReLoanRules().then((rules) => {
-      if (!cancelled) {
-        setResult(
-          checkReLoanEligibility({ customer, loan, vehicle, rules })
-        );
-      }
-    });
+    getReLoanRules()
+      .then((rules) =>
+        checkReLoanEligibility({ customer, loan, vehicle, rules })
+      )
+      .then((eligibility) => {
+        if (!cancelled) {
+          setResult(eligibility);
+        }
+      });
 
     return () => {
       cancelled = true;

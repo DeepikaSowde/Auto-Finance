@@ -47,18 +47,20 @@ const ReLoanEligibility = () => {
 
     let cancelled = false;
 
-    getReLoanRules().then((rules) => {
-      if (!cancelled) {
-        setResult(
-          checkReLoanEligibility({
-            customer: match.customer,
-            loan: match.loan,
-            vehicle: match.vehicle,
-            rules,
-          })
-        );
-      }
-    });
+    getReLoanRules()
+      .then((rules) =>
+        checkReLoanEligibility({
+          customer: match.customer,
+          loan: match.loan,
+          vehicle: match.vehicle,
+          rules,
+        })
+      )
+      .then((eligibility) => {
+        if (!cancelled) {
+          setResult(eligibility);
+        }
+      });
 
     return () => {
       cancelled = true;
@@ -97,7 +99,7 @@ const ReLoanEligibility = () => {
   const startReLoan = async () => {
     const fresh = await findCustomerAndLoan(loanId);
     const freshResult = fresh
-      ? checkReLoanEligibility({
+      ? await checkReLoanEligibility({
           customer: fresh.customer,
           loan: fresh.loan,
           vehicle: fresh.vehicle,
